@@ -667,6 +667,152 @@ namespace NGraph {
         }
     }
 
+    struct BFSTree {
+
+        static constexpr int inf = 1000000000;
+
+        struct Edge {
+            int u, v;
+            Edge(int u_ = -1, int v_ = -1) : u(u_), v(v_) {}
+        };
+
+        struct Neighbor {
+            int v, e;
+            Neighbor(int v_ = -1, int e_ = -1) : v(v_), e(e_) {}
+        };
+
+        const int N;
+        const int root;
+        std::vector<Edge> edges; // (u, v)
+        std::vector<std::vector<Neighbor>> neighbors;
+        std::vector<bool> used;
+
+        std::vector<int> dist;
+        std::vector<int> vpar;
+        std::vector<int> efrom;
+
+        std::vector<int> removed;
+        FastQueue qu;
+
+        BFSTree(const Input& input, int root_) : N((int)input.xys.size()), root(root_) {
+
+            neighbors.resize(input.xys.size());
+            for (int e = 0; e < input.M; e++) {
+                const auto& [u, v] = input.uvs[e];
+                edges.emplace_back(u, v);
+                neighbors[u].emplace_back(v, e);
+                neighbors[v].emplace_back(u, e);
+            }
+
+            used.resize(input.M, true);
+
+            dist.resize(N, inf);
+            vpar.resize(N, -1);
+            efrom.resize(N, -1);
+
+            std::queue<int> qu;
+            dist[root] = 0;
+            qu.push(root);
+            while (!qu.empty()) {
+                int from = qu.front(); qu.pop();
+                for (const auto& [to, e] : neighbors[from]) {
+                    if (!used[e]) continue; // 削除したほうがいい？
+                    if (chmin(dist[to], dist[from] + 1)) {
+                        vpar[to] = from;
+                        efrom[to] = e;
+                        qu.push(to);
+                    }
+                }
+            }
+        }
+
+        void dfs(std::vector<int>& removed, int u) {
+            for (const auto& [v, e] : neighbors[u]) {
+                if (!used[e]) continue;
+                if (vpar[v] == u) { // is child node
+                    dfs(removed, v);
+                }
+            }
+            vpar[u] = efrom[u] = -1;
+            dist[u] = inf;
+            removed.push_back(u);
+        }
+
+        void remove(int e) {
+            assert(used[e]);
+            used[e] = false;
+            int subroot = -1;
+            {
+                const auto& [u, v] = edges[e];
+                if (dist[u] == inf && dist[v] == inf) return;
+                subroot = (dist[u] < dist[v]) ? v : u;
+                int parent = (dist[u] < dist[v]) ? u : v;
+                if (vpar[subroot] != parent) return; // 最短路ではない
+            }
+            // dfs で部分木を削除
+            removed.clear();
+            dfs(removed, subroot);
+
+            // 削除した頂点に隣接していた頂点をキューに入れる
+            qu.reset();
+            for (int u : removed) {
+                for (const auto& [v, e] : neighbors[u]) {
+                    if (dist[v] != inf) {
+                        qu.push(v);
+                    }
+                }
+            }
+            
+            // bfs
+            while (!qu.empty()) {
+                int from = qu.pop();
+                for (const auto& [to, e] : neighbors[from]) {
+                    if (!used[e]) continue; // 削除したほうがいい？
+                    if (chmin(dist[to], dist[from] + 1)) {
+                        vpar[to] = from;
+                        efrom[to] = e;
+                        qu.push(to);
+                    }
+                }
+            }
+        }
+
+        void add(int e) {
+            assert(!used[e]);
+            used[e] = true;
+            const auto& [v0, v1] = edges[e];
+
+            if (dist[v0] == inf && dist[v1] == inf) return;
+
+            qu.reset();
+            if (dist[v0] + 1 < dist[v1]) {
+                dist[v1] = dist[v0] + 1;
+                vpar[v1] = efrom[v1] = -1;
+                qu.push(v1);
+            }
+            else if (dist[v1] + 1 < dist[v0]) {
+                dist[v0] = dist[v1] + 1;
+                vpar[v0] = efrom[v0] = -1;
+                qu.push(v0);
+            }
+            else return;
+
+            // bfs
+            while (!qu.empty()) {
+                int from = qu.pop();
+                for (const auto& [to, e] : neighbors[from]) {
+                    if (!used[e]) continue; // 削除したほうがいい？
+                    if (chmin(dist[to], dist[from] + 1)) {
+                        vpar[to] = from;
+                        efrom[to] = e;
+                        qu.push(to);
+                    }
+                }
+            }
+        }
+
+    };
+
     struct ShortestPathTree2 {
 
         using E = std::pair<double, int>; // (cost, vid)
@@ -696,14 +842,14 @@ namespace NGraph {
         std::vector<int> vpar;
         std::vector<int> efrom;
 
-        ShortestPathTree2(const Input& input, int root_) : N((int)input.xys.size()), root(root_) {
+        ShortestPathTree2(const Input& input, int root_, bool unary = false) : N((int)input.xys.size()), root(root_) {
 
             neighbors.resize(input.xys.size());
             for (int e = 0; e < input.M; e++) {
                 const auto& [u, v] = input.uvs[e];
                 const auto& [ux, uy] = input.xys[u];
                 const auto& [vx, vy] = input.xys[v];
-                double w = sqrt((ux - vx) * (ux - vx) + (uy - vy) * (uy - vy));
+                double w = unary ? 1.0 : sqrt((ux - vx) * (ux - vx) + (uy - vy) * (uy - vy));
                 edges.emplace_back(u, v, w);
                 neighbors[u].emplace_back(v, e, w);
                 neighbors[v].emplace_back(u, e, w);
@@ -964,13 +1110,13 @@ namespace NGraph {
             validate();
         }
 
-        ShortestPathTree(const Input& input, int root_index_) : root_index(root_index_) {
+        ShortestPathTree(const Input& input, int root_index_, bool unary = false) : root_index(root_index_) {
 
             for (int eid = 0; eid < input.M; eid++) {
                 const auto& [v0, v1] = input.uvs[eid];
                 const auto& [v0x, v0y] = input.xys[v0];
                 const auto& [v1x, v1y] = input.xys[v1];
-                double weight = sqrt((v0x - v1x) * (v0x - v1x) + (v0y - v1y) * (v0y - v1y));
+                double weight = unary ? 1.0 : sqrt((v0x - v1x) * (v0x - v1x) + (v0y - v1y) * (v0y - v1y));
                 edges.emplace_back(eid, v0, v1, weight);
             }
 
@@ -1264,18 +1410,19 @@ namespace NGraph {
         }
     }
 
-    bool near_equal(const std::vector<double>& d1, const std::vector<double>& d2) {
+    template<typename T, typename U>
+    bool near_equal(const std::vector<T>& d1, const std::vector<U>& d2) {
         if (d1.size() != d2.size()) return false;
         bool ok = true;
         for (int i = 0; i < (int)d1.size(); i++) {
-            if (abs(d1[i] - d2[i]) > 1e-8) {
+            if (abs((double)d1[i] - (double)d2[i]) > 1e-8) {
                 return false;
             }
         }
         return true;
     }
 
-    void test_shortest_path(const Input& input) {
+    void test_shortest_path(const Input& input, bool unary = false) {
         Xorshift rnd;
         std::vector<int> eids(input.M);
         std::iota(eids.begin(), eids.end(), 0);
@@ -1292,6 +1439,27 @@ namespace NGraph {
                 spt.add(eid);
                 spt2.add(eid);
                 assert(near_equal(spt.get_dist(), spt2.dist));
+            }
+        }
+    }
+
+    void test_bfs(const Input& input) {
+        Xorshift rnd;
+        std::vector<int> eids(input.M);
+        std::iota(eids.begin(), eids.end(), 0);
+        for (int s = 0; s < N; s++) {
+            dump(s);
+            NGraph::ShortestPathTree spt(input, s, true);
+            NGraph::BFSTree bt(input, s);
+            for (int eid : eids) {
+                spt.remove(eid);
+                bt.remove(eid);
+                assert(near_equal(bt.dist, spt.get_dist()));
+            }
+            for (int eid : eids) {
+                spt.add(eid);
+                bt.add(eid);
+                assert(near_equal(bt.dist, spt.get_dist()));
             }
         }
     }
@@ -1332,6 +1500,24 @@ namespace NGraph {
         }
     }
 
+    void check_runtime_bfs(const Input& input) {
+        Perf perf(__FUNCTION__);
+        Xorshift rnd;
+        std::vector<int> eids(input.M);
+        std::iota(eids.begin(), eids.end(), 0);
+        for (int i = 0; i < 3; i++) {
+            for (int s = 0; s < N; s++) {
+                NGraph::BFSTree bt(input, s);
+                for (int eid : eids) {
+                    bt.remove(eid);
+                }
+                for (int eid : eids) {
+                    bt.add(eid);
+                }
+            }
+        }
+    }
+
 }
 
 
@@ -1349,9 +1535,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
 #if _MSC_VER
-    std::ifstream ifs("../../tools/in/0004.txt");
+    std::ifstream ifs("../../tools/in/0000.txt");
     std::istream& in = ifs;
-    std::ofstream ofs("../../tools/out/0004.txt");
+    std::ofstream ofs("../../tools/out/0000.txt");
     std::ostream& out = ofs;
 #else
     std::istream& in = std::cin;
@@ -1365,9 +1551,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         //NGraph::test_wf_djk(input);
         //NGraph::test_add_edges(input);
         //NGraph::test_shortest_path_naive(input);
-        //NGraph::test_shortest_path(input);
-        NGraph::check_runtime_shortest_path_1(input);
-        NGraph::check_runtime_shortest_path_2(input);
+        //NGraph::test_shortest_path(input, false);
+        //NGraph::check_runtime_shortest_path_1(input);
+        //NGraph::check_runtime_shortest_path_2(input);
+        //NGraph::test_bfs(input);
+        NGraph::check_runtime_bfs(input);
 
         exit(0);
     }
