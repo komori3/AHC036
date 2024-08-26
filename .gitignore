@@ -1,0 +1,8 @@
+.vs
+tools
+tools_win
+vs/*/obj
+vs/*/bin
+submissions/*/err
+submissions/*/out
+vis.html
