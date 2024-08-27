@@ -414,6 +414,8 @@ namespace NGraph {
                     }
                 }
             }
+            dump(dist);
+            exit(1);
         }
 
         void dfs(std::vector<int>& removed, int u) {
@@ -477,12 +479,14 @@ namespace NGraph {
             qu.reset();
             if (dist[v0] + 1 < dist[v1]) {
                 dist[v1] = dist[v0] + 1;
-                vpar[v1] = efrom[v1] = -1;
+                vpar[v1] = v0;
+                efrom[v1] = e;
                 qu.push(v1);
             }
             else if (dist[v1] + 1 < dist[v0]) {
                 dist[v0] = dist[v1] + 1;
-                vpar[v0] = efrom[v0] = -1;
+                vpar[v0] = v1;
+                efrom[v0] = e;
                 qu.push(v0);
             }
             else return;
@@ -630,12 +634,14 @@ namespace NGraph {
 
             if (dist[v0] + weight < dist[v1]) {
                 dist[v1] = dist[v0] + weight;
-                vpar[v1] = efrom[v1] = -1;
+                vpar[v1] = v0;
+                efrom[v1] = e;
                 pq.emplace(dist[v1], v1);
             }
             else if (dist[v1] + weight < dist[v0]) {
                 dist[v0] = dist[v1] + weight;
-                vpar[v0] = efrom[v0] = -1;
+                vpar[v0] = v1;
+                efrom[v0] = e;
                 pq.emplace(dist[v0], v0);
             }
             else return;
@@ -936,7 +942,6 @@ namespace NGraph {
         }
 
         void validate() {
-            return;
             std::vector<std::vector<std::tuple<double, int, int>>> adj(N);
             for (int eid = 0; eid < (int)edges.size(); eid++) {
                 if (!used[eid]) continue;
@@ -1082,14 +1087,21 @@ namespace NGraph {
         Xorshift rnd;
         std::vector<int> eids(input.M);
         std::iota(eids.begin(), eids.end(), 0);
-#pragma omp parallel for
+//#pragma omp parallel for
         for (int s = 0; s < N; s++) {
-#pragma omp critical(crit_sct)
+//#pragma omp critical(crit_sct)
             {
                 dump(s);
                 //shuffle_vector(eids, rnd);
             }
             NGraph::ShortestPathTree spt(input, s);
+            for (int eid : eids) {
+                spt.remove(eid);
+                //spt.add(eid);
+            }
+            for (int eid : eids) {
+                spt.add(eid);
+            }
             for (int eid : eids) {
                 spt.remove(eid);
                 //spt.add(eid);
@@ -1106,6 +1118,9 @@ namespace NGraph {
         bool ok = true;
         for (int i = 0; i < (int)d1.size(); i++) {
             if (abs((double)d1[i] - (double)d2[i]) > 1e-8) {
+                dump(i, d1[i], d2[i]);
+                dump(d1);
+                dump(d2);
                 return false;
             }
         }
@@ -1130,7 +1145,40 @@ namespace NGraph {
                 spt2.add(eid);
                 assert(near_equal(spt.get_dist(), spt2.dist));
             }
+            for (int eid : eids) {
+                spt.remove(eid);
+                spt2.remove(eid);
+                assert(near_equal(spt.get_dist(), spt2.dist));
+            }
+            for (int eid : eids) {
+                spt.add(eid);
+                spt2.add(eid);
+                assert(near_equal(spt.get_dist(), spt2.dist));
+            }
         }
+    }
+
+    void test_shortest_path_2(const Input& input, bool unary = false) {
+        Xorshift rnd;
+        int s = 0, e = 2;
+        NGraph::ShortestPathTree spt(input, s);
+        NGraph::ShortestPathTree2 spt2(input, s);
+        auto vp0 = spt2.vpar;
+        dump(spt2.vpar);
+        spt.remove(e);
+        spt2.remove(e);
+        assert(near_equal(spt.get_dist(), spt2.dist));
+        spt.add(e);
+        spt2.add(e);
+        auto vp1 = spt2.vpar;
+        assert(near_equal(vp0, vp1));
+        assert(near_equal(spt.get_dist(), spt2.dist));
+        spt.remove(e);
+        spt2.remove(e);
+        assert(near_equal(spt.get_dist(), spt2.dist));
+        spt.add(e);
+        spt2.add(e);
+        assert(near_equal(spt.get_dist(), spt2.dist));
     }
 
     void test_bfs(const Input& input) {
@@ -1240,11 +1288,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     //NGraph::test_wf_djk(input);
     //NGraph::test_add_edges(input);
     //NGraph::test_shortest_path_naive(input);
-    //NGraph::test_shortest_path(input, false);
+    NGraph::test_shortest_path(input, false);
+    //NGraph::test_shortest_path_2(input, false);
     //NGraph::check_runtime_shortest_path_1(input);
     //NGraph::check_runtime_shortest_path_2(input);
     //NGraph::test_bfs(input);
-    NGraph::check_runtime_bfs(input);
+    //NGraph::check_runtime_bfs(input);
 
     return 0;
 }

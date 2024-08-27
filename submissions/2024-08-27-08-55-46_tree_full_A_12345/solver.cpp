@@ -395,13 +395,12 @@ std::vector<std::pair<int, int>> compute_critical_edges(
 
 void dfs(const std::vector<std::vector<int>>& G, std::vector<bool>& visited, std::vector<int>& path, int p, int u) {
     visited[u] = true;
-    //path.push_back(u);
+    path.push_back(u);
     for (int v : G[u]) {
         if (v == p) continue;
         if (visited[v]) continue;
         dfs(G, visited, path, u, v);
     }
-    path.push_back(u);
 }
 
 std::vector<int> compute_initial_A(const Input& input, const std::vector<std::vector<int>>& G) {

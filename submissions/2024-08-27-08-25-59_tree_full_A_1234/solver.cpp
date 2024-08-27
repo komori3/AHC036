@@ -395,13 +395,12 @@ std::vector<std::pair<int, int>> compute_critical_edges(
 
 void dfs(const std::vector<std::vector<int>>& G, std::vector<bool>& visited, std::vector<int>& path, int p, int u) {
     visited[u] = true;
-    //path.push_back(u);
+    path.push_back(u);
     for (int v : G[u]) {
         if (v == p) continue;
         if (visited[v]) continue;
         dfs(G, visited, path, u, v);
     }
-    path.push_back(u);
 }
 
 std::vector<int> compute_initial_A(const Input& input, const std::vector<std::vector<int>>& G) {
@@ -753,12 +752,11 @@ namespace NGraph {
             for (int u = 0; u < N; u++) {
                 if (efrom[u] == -1) continue;
                 const auto& [x, y] = g->edges[efrom[u]];
-                if (removable[x] && removable[y]) {
-                    continue;
-                }
+                if (removable[x] && removable[y]) continue;
                 G[x].push_back(y);
                 G[y].push_back(x);
             }
+            //dump(indeg);
             return G;
         }
 
@@ -830,63 +828,6 @@ namespace NTree {
         return q.first;
     }
 
-    /* LCA(G, root): 木 G に対する根を root として Lowest Common Ancestor を求める構造体
-        query(u,v): u と v の LCA を求める。計算量 O(logn)
-        前処理: O(nlogn)時間, O(nlogn)空間
-    */
-    struct LCA {
-        std::vector<std::vector<int>> parent;  // parent[k][u]:= u の 2^k 先の親
-        std::vector<int> dist;            // root からの距離
-        LCA(const Graph& G, int root = 0) { init(G, root); }
-        // 初期化
-        void init(const Graph& G, int root = 0) {
-            int V = G.size();
-            int K = 1;
-            while ((1 << K) < V) K++;
-            parent.assign(K, std::vector<int>(V, -1));
-            dist.assign(V, -1);
-            dfs(G, root, -1, 0);
-            for (int k = 0; k + 1 < K; k++) {
-                for (int v = 0; v < V; v++) {
-                    if (parent[k][v] < 0) {
-                        parent[k + 1][v] = -1;
-                    }
-                    else {
-                        parent[k + 1][v] = parent[k][parent[k][v]];
-                    }
-                }
-            }
-        }
-        // 根からの距離と1つ先の頂点を求める
-        void dfs(const Graph& G, int v, int p, int d) {
-            parent[0][v] = p;
-            dist[v] = d;
-            for (auto e : G[v]) {
-                if (e != p) dfs(G, e, v, d + 1);
-            }
-        }
-        int query(int u, int v) {
-            if (dist[u] < dist[v]) std::swap(u, v);  // u の方が深いとする
-            int K = parent.size();
-            // LCA までの距離を同じにする
-            for (int k = 0; k < K; k++) {
-                if ((dist[u] - dist[v]) >> k & 1) {
-                    u = parent[k][u];
-                }
-            }
-            // 二分探索で LCA を求める
-            if (u == v) return u;
-            for (int k = K - 1; k >= 0; k--) {
-                if (parent[k][u] != parent[k][v]) {
-                    u = parent[k][u];
-                    v = parent[k][v];
-                }
-            }
-            return parent[0][u];
-        }
-        int get_dist(int u, int v) { return dist[u] + dist[v] - 2 * dist[query(u, v)]; }
-    };
-
 }
 
 
@@ -943,47 +884,37 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
 
     std::vector<std::vector<int>> G4;
-    std::vector<std::vector<int>> G5;
     {
-        int min_diam = INT_MAX;
-        int min_tour = INT_MAX;
+        int min_diam = INT_MAX, min_root = -1;
         NGraph::BFSTrees trees(input);
         for (const auto& tree : trees.trees) {
-            auto g = tree.to_graph(critical_nodes);
+            //auto g = tree.to_graph(critical_nodes);
+            auto g = tree.to_graph();
+            //exit(1);
             int diam = NTree::tree_diameter(g);
             if (chmin(min_diam, diam)) {
                 G4 = g;
-            }
-            NTree::LCA lca(g, tree.root);
-            int tour = 0;
-            for (int i = 1; i < (int)input.ts.size(); i++) {
-                tour += lca.get_dist(input.ts[i - 1], input.ts[i]);
-            }
-            if (chmin(min_tour, tour)) {
-                G5 = g;
+                min_root = tree.root;
             }
         }
-        dump(min_diam, min_tour);
+        dump(min_diam);
     }
 
     auto paths2 = compute_shortest_paths(G2);
     auto paths3 = compute_shortest_paths(G3);
     auto paths4 = compute_shortest_paths(G4);
-    auto paths5 = compute_shortest_paths(G5);
 
     auto initial_A = compute_initial_A(input, G);
     auto initial_A2 = compute_initial_A(input, G2);
     auto initial_A3 = compute_initial_A(input, G3);
     auto initial_A4 = compute_initial_A(input, G4);
-    auto initial_A5 = compute_initial_A(input, G5);
-    dump(initial_A.size(), initial_A2.size(), initial_A3.size(), initial_A4.size(), initial_A5.size(), input.LA);
+    dump(initial_A.size(), initial_A2.size(), initial_A3.size(), initial_A4.size(), input.LA);
 
     auto tour = compute_tour(input, paths);
     auto tour2 = compute_tour(input, paths2);
     auto tour3 = compute_tour(input, paths3);
     auto tour4 = compute_tour(input, paths4);
-    auto tour5 = compute_tour(input, paths5);
-    dump(tour.size(), tour2.size(), tour3.size(), tour4.size(), tour5.size());
+    dump(tour.size(), tour2.size(), tour3.size(), tour4.size());
 
     int best_score = INT_MAX;
     std::vector<int> best_A;
@@ -1015,14 +946,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
     {
         auto [score, A, ans] = solve(input, tour4, initial_A4);
-        if (chmin(best_score, score)) {
-            best_A = A;
-            best_ans = ans;
-            dump(best_score);
-        }
-    }
-    {
-        auto [score, A, ans] = solve(input, tour5, initial_A5);
         if (chmin(best_score, score)) {
             best_A = A;
             best_ans = ans;

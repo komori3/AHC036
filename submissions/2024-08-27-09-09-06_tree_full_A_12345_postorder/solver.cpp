@@ -904,9 +904,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
 #if _MSC_VER
-    std::ifstream ifs("../../tools/in/0000.txt");
+    std::ifstream ifs("../../tools/in/0003.txt");
     std::istream& in = ifs;
-    std::ofstream ofs("../../tools/out/0000.txt");
+    std::ofstream ofs("../../tools/out/0003.txt");
     std::ostream& out = ofs;
 #else
     std::istream& in = std::cin;
