@@ -297,7 +297,7 @@ namespace NGraph {
 
     std::array<std::vector<std::pair<int, int>>, N> adjs;
     //std::array<std::array<std::vector<int>, N>, N> pathss;
-
+    
     int shortest_tour_length;
 
     void initialize(int argc, char** argv, const Option& opt) {
@@ -756,7 +756,7 @@ void remove_edge(std::vector<std::vector<std::pair<int, int>>>& G, int e) {
     G[u].erase(
         std::remove_if(G[u].begin(), G[u].end(), [&v](const std::pair<int, int>& p) {
             return p.first == v;
-            }),
+        }),
         G[u].end()
     );
     G[v].erase(
@@ -870,7 +870,7 @@ void show(const std::bitset<M_MAX>& B, int delay = 0) {
     std::vector<cv::Point> points;
     for (const auto& [x, y] : NInput::xys) {
         points.emplace_back(x + margin, y + margin);
-    }
+}
     cv::Mat3b img(width + margin * 2, width + margin * 2, cv::Vec3b(255, 255, 255));
     for (int n = 0; n < N; n++) {
         const auto& p = points[n];
@@ -904,7 +904,7 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
         if (v == p) continue;
         if (visited[v]) continue;
         dfs(G, visited, path, u, v);
-    }
+}
     path.push_back(u);
 }
 
@@ -914,38 +914,6 @@ std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, 
     dfs(G, visited, A, -1, 0);
     assert(A.size() <= NInput::LA);
     return A;
-}
-
-std::vector<int> compute_initial_A_2(const std::vector<int>& tour) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    for (int t : tour) {
-        if (!visited[t]) {
-            visited[t] = true;
-            A.push_back(t);
-        }
-    }
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A_3(const std::vector<int>& tour) {
-    std::map<int, std::vector<int>> ctr;
-    for (int i = 0; i + NInput::LB <= (int)tour.size(); i++) {
-        std::set<int> st({ tour[i] });
-        int j = i + 1;
-        while (j < (int)tour.size()) {
-            if (!st.count(tour[j]) && st.size() == NInput::LB) break;
-            st.insert(tour[j]);
-            j++;
-        }
-        ctr[j - i].push_back(i);
-        //dump(i, j - i, std::vector<int>(tour.begin() + i, tour.begin() + j));
-    }
-    for (const auto& [k, v] : ctr) {
-        std::cerr << k << ": " << v << '\n';
-    }
-    return {};
 }
 
 std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
@@ -1038,148 +1006,6 @@ std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
     return { best_score, best_A, best_ans };
 }
 
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    std::vector<int> max_len(tour.size(), 0); // tour[i] から信号変化によって進める最大距離
-    std::vector<int> max_idx(tour.size(), -1); // 最大距離を実現する添字
-    std::vector<int> signal(N);
-    for (int i = 0; i < NInput::LB; i++) {
-        signal[A[i]]++;
-    }
-    for (int a_idx = 0; a_idx < (int)A.size(); a_idx++) {
-
-        int t_idx = 0;
-        while (true) {
-            while (t_idx + 1 < (int)tour.size() && !signal[tour[t_idx + 1]]) t_idx++;
-            if (t_idx >= (int)tour.size() - 1) break;
-            int len = 0;
-            while (t_idx + len + 1 < (int)tour.size() && signal[tour[t_idx + len + 1]]) len++;
-            for (int i = 0; i < len; i++) {
-                if (chmax(max_len[t_idx + i], len - i)) {
-                    max_idx[t_idx + i] = a_idx;
-                }
-            }
-            t_idx += len + 2; // signal[tour[t_idx + len + 1] == false
-        }
-
-        if (a_idx + NInput::LB == A.size()) break;
-        signal[A[a_idx]]--;
-        signal[A[a_idx + NInput::LB]]++;
-    }
-
-    dump(max_len);
-    dump(max_idx);
-
-    return {};
-}
-
-// tour と A が決まっていれば、配列 B を総入れ替えする前提での最小コストは求まる
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    std::vector<int> max_len(tour.size(), 0); // tour[i] から信号変化によって進める最大距離
-    std::vector<int> max_idx(tour.size(), -1); // 最大距離を実現する添字
-    std::vector<int> signal(N);
-    for (int t_idx = 0; t_idx + 1 < (int)tour.size(); t_idx++) {
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]++;
-            }
-            int len = 0;
-            while (t_idx + len + 1 < (int)tour.size() && signal[tour[t_idx + len + 1]]) len++;
-            if (chmax(max_len[t_idx], len)) {
-                max_idx[t_idx] = a_idx;
-            }
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]--;
-            }
-        }
-    }
-    std::vector<int> dist((int)tour.size(), inf);
-    std::vector<int> prev((int)tour.size(), -1);
-    std::queue<int> qu;
-    dist[0] = 0;
-    qu.push(0);
-    while (!qu.empty()) {
-        int u = qu.front(); qu.pop();
-        int l = max_len[u];
-        for (int v = u + 1; v <= u + max_len[u]; v++) {
-            if (chmin(dist[v], dist[u] + 1)) {
-                prev[v] = u;
-                qu.push(v);
-            }
-        }
-    }
-    int t = (int)tour.size() - 1;
-    std::vector<int> path;
-    while (t != 0) {
-        path.push_back(t);
-        t = prev[t];
-    }
-    path.push_back(0);
-    std::reverse(path.begin(), path.end());
-    std::vector<std::string> ans;
-    int score = 0;
-    for (int i = 0; i + 1 < (int)path.size(); i++) {
-        int s = path[i];
-        ans.push_back(format("s %d %d 0", NInput::LB, max_idx[s]));
-        score++;
-        for (int t = s + 1; t <= path[i + 1]; t++) {
-            ans.push_back(format("m %d", tour[t]));
-        }
-    }
-    return { score, A, ans };
-}
-
-// ケツから貪欲で十分？
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive_2(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    int tail = (int)tour.size() - 1;
-    std::vector<int> signal(N);
-    std::vector<std::pair<int, int>> path;
-    path.emplace_back(tail, -1);
-    while (tail > 0) {
-        int min_ntail = INT_MAX, min_idx = -1;
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]++;
-            }
-            int ntail = tail;
-            while (ntail > 0 && signal[tour[ntail]]) ntail--;
-            if (chmin(min_ntail, ntail)) {
-                min_idx = a_idx;
-            }
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]--;
-            }
-        }
-        assert(min_ntail != tail);
-        path.emplace_back(min_ntail, min_idx);
-        tail = min_ntail;
-    }
-    std::reverse(path.begin(), path.end());
-    std::vector<std::string> ans;
-    int score = 0;
-    for (int i = 0; i + 1 < (int)path.size(); i++) {
-        const auto& [t1, a1] = path[i];
-        const auto& [t2, a2] = path[i + 1];
-        ans.push_back(format("s %d %d 0", NInput::LB, a1));
-        score++;
-        for (int t = t1 + 1; t <= t2; t++) {
-            ans.push_back(format("m %d", tour[t]));
-        }
-    }
-    return { score, A, ans };
-}
-
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
     // 使用頂点数が少ないほど配列 A の余剰スペースが増える (-> 一回の信号変化で進める距離が増える)
@@ -1199,14 +1025,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 27;
+    opt.seed = 2;
 
     std::cerr << opt << '\n';
 
     NInput::initialize(argc, argv, opt);
     NGraph::initialize(argc, argv, opt);
-
-    dump(NInput::LA, NInput::LB);
 
     NSteiner::set_terminals(NInput::tour_nodes);
     NSteiner::run(0);
@@ -1223,7 +1047,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     int tour_length = compute_tour_length(g);
 
     int loop = 0;
-    while (timer.elapsed_ms() < 2300) {
+    while(timer.elapsed_ms() < 2600) {
         loop++;
         auto mtr = modify_tree(g, used_edge, rnd);
         if (!mtr.succeed) continue;
@@ -1240,57 +1064,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
     dump(loop, tour_length);
 
-    auto tour = compute_tour(g);
-    //compute_initial_A_3(tour);
-    //exit(1);
-    dump(tour.size());
     auto initial_A = compute_initial_A(g);
-    //auto initial_A = compute_initial_A_2(tour);
     dump(initial_A.size());
-    auto [score, A, ans] = solve(tour, initial_A);
-    dump(A.size(), score);
-    std::tie(score, A, ans) = solve_opt_naive_2(tour, A);
-    dump(A.size(), score);
-    while (A.size() < NInput::LA) A.push_back(0);
 
-    while (false) {
-        int min_dist = INT_MAX;
-        int min_e = -1;
-        std::bitset<N> used_v;
-        for (int e = 0; e < NInput::M; e++) {
-            const auto& [u, v] = NInput::uvs[e];
-            used_v[u] = used_v[v] = true;
-        }
-        for (int e = 0; e < NInput::M; e++) {
-            if (used_edge[e]) continue;
-            const auto& [u, v] = NInput::uvs[e];
-            if (!used_v[u] || !used_v[v]) continue;
-            g[u].emplace_back(v, e);
-            g[v].emplace_back(u, e);
-            used_edge[e] = true;
-            int dist = compute_tour_length(g);
-            if (chmin(min_dist, dist)) {
-                min_e = e;
-                //dump(e, dist);
-            }
-            remove_edge(g, e);
-            used_edge[e] = false;
-        }
-        {
-            const auto& [u, v] = NInput::uvs[min_e];
-            g[u].emplace_back(v, min_e);
-            g[v].emplace_back(u, min_e);
-            used_edge[min_e] = true;
-        }
-        auto initial_A = compute_initial_A(g);
-        //dump(initial_A.size());
-        auto tour = compute_tour(g);
-        //dump(tour.size());
-        auto [score, A, ans] = solve(tour, initial_A);
-        //dump(A.size(), score);
-        std::tie(score, A, ans) = solve_opt_naive(tour, A);
-        dump(min_e, score);
-    }
+    auto tour = compute_tour(g);
+    dump(tour.size());
+
+    auto [score, A, ans] = solve(tour, initial_A);
 
     dump(timer.elapsed_ms());
     assert(timer.elapsed_ms() < 2980);

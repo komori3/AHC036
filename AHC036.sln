@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "solver", "vs\solver\solver.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "graph", "vs\graph\graph.vcxproj", "{31B54284-A267-4546-A6B3-0C59F040DD46}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "solver_old", "vs\solver_old\solver_old.vcxproj", "{9ABC43FF-23CC-4532-AC88-CAA07AA8A1E5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,10 @@ Global
 		{31B54284-A267-4546-A6B3-0C59F040DD46}.Debug|x64.Build.0 = Debug|x64
 		{31B54284-A267-4546-A6B3-0C59F040DD46}.Release|x64.ActiveCfg = Release|x64
 		{31B54284-A267-4546-A6B3-0C59F040DD46}.Release|x64.Build.0 = Release|x64
+		{9ABC43FF-23CC-4532-AC88-CAA07AA8A1E5}.Debug|x64.ActiveCfg = Debug|x64
+		{9ABC43FF-23CC-4532-AC88-CAA07AA8A1E5}.Debug|x64.Build.0 = Debug|x64
+		{9ABC43FF-23CC-4532-AC88-CAA07AA8A1E5}.Release|x64.ActiveCfg = Release|x64
+		{9ABC43FF-23CC-4532-AC88-CAA07AA8A1E5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

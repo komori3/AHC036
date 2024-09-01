@@ -266,29 +266,6 @@ namespace NInput {
 
 }
 
-namespace NOutput {
-
-    void output(std::ostream& out, const std::vector<int>& A, const std::vector<std::string>& lines) {
-        out << A[0];
-        for (int i = 1; i < (int)A.size(); i++) out << ' ' << A[i];
-        out << '\n';
-        for (const auto& s : lines) out << s << '\n';
-    }
-
-    void output(int argc, char** argv, const Option& opt, const std::vector<int>& A, const std::vector<std::string>& lines) {
-        if (argc >= 2 && std::string(argv[1]) == "local") {
-            assert(0 <= opt.seed && opt.seed < 100);
-            const std::string file(format("../../tools/out/%04d.txt", opt.seed));
-            std::ofstream ofs(file);
-            output(ofs, A, lines);
-        }
-        else {
-            output(std::cout, A, lines);
-        }
-    }
-
-}
-
 namespace NGraph {
 
     std::array<std::array<int, N>, N> dss;   // distance matrix
@@ -297,7 +274,7 @@ namespace NGraph {
 
     std::array<std::vector<std::pair<int, int>>, N> adjs;
     //std::array<std::array<std::vector<int>, N>, N> pathss;
-
+    
     int shortest_tour_length;
 
     void initialize(int argc, char** argv, const Option& opt) {
@@ -459,205 +436,37 @@ namespace NSteiner {
 
 }
 
-namespace NLCA {
 
-    /*
-      The implementation of <O(n), O(1)> LCA with C++
-      varified with GRL_5_C
-
-      http://joisino.hatenablog.com/entry/2017/08/13/210000
-
-      Copyright (c) 2017 joisino
-      Released under the MIT license
-      http://opensource.org/licenses/mit-license.php
-     */
-
-    using namespace std;
-
-    template<class T>
-    class MinOp {
-    public:
-        T operator () (T a, T b) { return min(a, b); }
-    };
-
-    // sparse table
-    // static range semigroup query
-    // time complexity: <O(n log n), O(1)>
-    // OpFunc is binary operator: T x T -> T
-    template<typename T, typename OpFunc>
-    struct SparseTable {
-        OpFunc op;
-        int size;
-        vector<int> lg;
-        vector<vector<T> > table;
-        void init(const vector<T>& array, OpFunc opfunc) {
-            int n = array.size();
-            op = opfunc;
-
-            lg.assign(n + 1, 0);
-            for (int i = 1; i <= n; i++) {
-                lg[i] = 31 - __builtin_clz(i);
+int compute_tour_length(const std::vector<std::vector<int>>& G) {
+    // ƒiƒC[ƒu‚ÉƒcƒA[‚Ì’·‚³‚ğŒvZ
+    std::array<int, N> ds;
+    FastQueue qu;
+    int s = 0;
+    int len = 0;
+    for (int t : NInput::ts) {
+        qu.reset();
+        ds.fill(inf);
+        ds[s] = 0;
+        qu.push(s);
+        while (!qu.empty()) {
+            auto u = qu.pop();
+            if (u == t) {
+                len += ds[t];
+                s = t;
+                break;
             }
-
-            table.assign(lg[n] + 1, array);
-            for (int i = 1; i <= lg[n]; i++) {
-                for (int j = 0; j < n; j++) {
-                    if (j + (1 << (i - 1)) < n) {
-                        table[i][j] = op(table[i - 1][j], table[i - 1][j + (1 << (i - 1))]);
-                    }
-                    else {
-                        table[i][j] = table[i - 1][j];
-                    }
-                }
+            for (int v : G[u]) {
+                if (ds[v] != inf) continue;
+                ds[v] = ds[u] + 1;
+                qu.push(v);
             }
         }
-        T query(int l, int r) {
-            assert(l < r);
-            return op(table[lg[r - l]][l], table[lg[r - l]][r - (1 << lg[r - l])]);
-        }
-    };
-
-
-    // plus minus one Range Minimum Query
-    // time complexity: <O(n), O(1)>
-    struct PMORMQ {
-        vector<int> a;
-        SparseTable<pair<int, int>, MinOp<pair<int, int> > > sparse_table;
-        vector<vector<vector<int> > > lookup_table;
-        vector<int> block_type;
-        int block_size, n_block;
-        void init(const vector<int>& array) {
-            a = array;
-            int n = a.size();
-            block_size = max(1, (31 - __builtin_clz(n)) / 2);
-            while (n % block_size != 0) {
-                a.push_back(a.back() + 1);
-                n++;
-            }
-            n_block = n / block_size;
-
-            vector<pair<int, int> > b(n_block, make_pair(INT_MAX, INT_MAX));
-            for (int i = 0; i < n; i++) {
-                b[i / block_size] = min(b[i / block_size], make_pair(a[i], i));
-            }
-            sparse_table.init(b, MinOp<pair<int, int> >());
-
-            block_type.assign(n_block, 0);
-            for (int i = 0; i < n_block; i++) {
-                int cur = 0;
-                for (int j = 0; j < block_size - 1; j++) {
-                    int ind = i * block_size + j;
-                    if (a[ind] < a[ind + 1]) {
-                        cur |= 1 << j;
-                    }
-                }
-                block_type[i] = cur;
-            }
-
-            lookup_table.assign(1 << (block_size - 1), vector<vector<int> >(block_size, vector<int>(block_size + 1)));
-            for (int i = 0; i < (1 << (block_size - 1)); i++) {
-                for (int j = 0; j < block_size; j++) {
-                    int res = 0;
-                    int cur = 0;
-                    int pos = j;
-                    for (int k = j + 1; k <= block_size; k++) {
-                        lookup_table[i][j][k] = pos;
-                        if (i & (1 << (k - 1))) {
-                            cur++;
-                        }
-                        else {
-                            cur--;
-                        }
-                        if (res > cur) {
-                            pos = k;
-                            res = cur;
-                        }
-                    }
-                }
-            }
-        }
-        int query(int l, int r) { // return position
-            assert(l < r);
-            int lb = l / block_size;
-            int rb = r / block_size;
-            if (lb == rb) {
-                return lb * block_size + lookup_table[block_type[lb]][l % block_size][r % block_size];
-            }
-            int pl = lb * block_size + lookup_table[block_type[lb]][l % block_size][block_size];
-            int pr = rb * block_size + lookup_table[block_type[rb]][0][r % block_size];
-            int pos = pl;
-            if (r % block_size > 0 && a[pl] > a[pr]) {
-                pos = pr;
-            }
-            if (lb + 1 == rb) {
-                return pos;
-            }
-            int sp = sparse_table.query(lb + 1, rb).second;
-            if (a[pos] > a[sp]) {
-                return sp;
-            }
-            return pos;
-        }
-    };
-
-    // LCA
-    // time complexity: <O(n), O(1)>
-    struct LCA {
-        int n;
-        vector<vector<int> > G;
-        PMORMQ rmq;
-        int cnt;
-        vector<int> depth, id, in;
-        void init(int size) {
-            n = size;
-            G.assign(n, vector<int>(0));
-        }
-        void add_edge(int a, int b) {
-            G[a].push_back(b);
-            G[b].push_back(a);
-        }
-        void dfs(int x, int p, int d) {
-            id[cnt] = x;
-            depth.push_back(d);
-            in[x] = cnt++;
-            for (int v : G[x]) {
-                if (v == p) {
-                    continue;
-                }
-                dfs(v, x, d + 1);
-                id[cnt] = x;
-                depth.push_back(d);
-                cnt++;
-            }
-        }
-        void precalc(int root) {
-            cnt = 0;
-            depth.clear();
-            in.assign(n, -1);
-            id.assign(2 * n - 1, -1);
-            dfs(root, -1, 0);
-            rmq.init(depth);
-        }
-        int lca(int a, int b) {
-            int x = in[a];
-            int y = in[b];
-            if (x > y) {
-                swap(x, y);
-            }
-            int pos = rmq.query(x, y + 1);
-            return id[pos];
-        }
-        int dist(int u) {
-            return depth[in[u]];
-        }
-    };
-
-    LCA lca;
-
+    }
+    return len;
 }
 
 int compute_tour_length(const std::vector<std::vector<std::pair<int, int>>>& G) {
-    // ãƒŠã‚¤ãƒ¼ãƒ–ã«ãƒ„ã‚¢ãƒ¼ã®é•·ã•ã‚’è¨ˆç®—
+    // ƒiƒC[ƒu‚ÉƒcƒA[‚Ì’·‚³‚ğŒvZ
     std::array<int, N> ds;
     FastQueue qu;
     int s = 0;
@@ -680,41 +489,6 @@ int compute_tour_length(const std::vector<std::vector<std::pair<int, int>>>& G) 
                 qu.push(v);
             }
         }
-    }
-    return len;
-}
-
-int compute_tour_length_2(const std::vector<std::vector<std::pair<int, int>>>& G) {
-    std::array<int, N> to_index;
-    to_index.fill(-1);
-    for (int u = 0; u < N; u++) {
-        for (const auto& [v, e] : G[u]) {
-            to_index[u] = to_index[v] = 1;
-        }
-    }
-    int T = 0;
-    {
-        for (int u = 0; u < N; u++) {
-            if (to_index[u] == 1) {
-                to_index[u] = T;
-                T++;
-            }
-        }
-    }
-    NLCA::lca.init(T);
-    for (int u = 0; u < N; u++) {
-        for (const auto& [v, e] : G[u]) {
-            if (u < v) {
-                NLCA::lca.add_edge(to_index[u], to_index[v]);
-            }
-        }
-    }
-    NLCA::lca.precalc(0);
-    int s = 0, len = 0;
-    for (int t : NInput::ts) {
-        int a = to_index[s], b = to_index[t], l = NLCA::lca.lca(a, b);
-        len += NLCA::lca.dist(a) + NLCA::lca.dist(b) - 2 * NLCA::lca.dist(l);
-        s = t;
     }
     return len;
 }
@@ -751,12 +525,41 @@ std::vector<int> compute_tour(const std::vector<std::vector<std::pair<int, int>>
     return tour;
 }
 
+int compute_tour_length(const std::array<std::vector<std::pair<int, int>>, N>& G) {
+    Perf perf(__FUNCTION__);
+    // ƒiƒC[ƒu‚ÉƒcƒA[‚Ì’·‚³‚ğŒvZ
+    std::array<int, N> ds;
+    FastQueue qu;
+    int s = 0;
+    int len = 0;
+    for (int t : NInput::ts) {
+        qu.reset();
+        ds.fill(inf);
+        ds[s] = 0;
+        qu.push(s);
+        while (!qu.empty()) {
+            auto u = qu.pop();
+            if (u == t) {
+                len += ds[t];
+                s = t;
+                break;
+            }
+            for (const auto& [v, _] : G[u]) {
+                if (ds[v] != inf) continue;
+                ds[v] = ds[u] + 1;
+                qu.push(v);
+            }
+        }
+    }
+    return len;
+}
+
 void remove_edge(std::vector<std::vector<std::pair<int, int>>>& G, int e) {
     const auto& [u, v] = NInput::uvs[e];
     G[u].erase(
         std::remove_if(G[u].begin(), G[u].end(), [&v](const std::pair<int, int>& p) {
             return p.first == v;
-            }),
+        }),
         G[u].end()
     );
     G[v].erase(
@@ -774,14 +577,14 @@ struct ModifyTreeResult {
 };
 
 ModifyTreeResult modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, Xorshift& rnd) {
-    // ã‚ã‚‹ç‚¹ s ã‚’é¸æŠ
-    // s ã‹ã‚‰åˆ¥ã®é ‚ç‚¹ã¸ã€ä½¿ã‚ã‚Œã¦ã„ãªã„è¾ºã‚’çµŒç”±ã—ã¦ãƒ‘ã‚¹ã‚’ç¹‹ã
-    // å‡ºæ¥ãŸã‚µã‚¤ã‚¯ãƒ«ã®ã€ç¹‹ã„ã ãƒ‘ã‚¹ä»¥å¤–ã®è¾ºã‚’ 1 ã¤å–ã‚Šé™¤ã
+    // ‚ ‚é“_ s ‚ğ‘I‘ğ
+    // s ‚©‚ç•Ê‚Ì’¸“_‚ÖAg‚í‚ê‚Ä‚¢‚È‚¢•Ó‚ğŒo—R‚µ‚ÄƒpƒX‚ğŒq‚®
+    // o—ˆ‚½ƒTƒCƒNƒ‹‚ÌAŒq‚¢‚¾ƒpƒXˆÈŠO‚Ì•Ó‚ğ 1 ‚Âæ‚èœ‚­
     int s = -1;
     while (true) {
         s = rnd.next_u32(N);
-        if (G[s].empty()) continue; // å­¤ç«‹ç‚¹
-        if (G[s].size() == NGraph::adjs[s].size()) continue; // ä¼¸ã°ã›ã‚‹ãƒ‘ã‚¹ãŒãªã„
+        if (G[s].empty()) continue; // ŒÇ—§“_
+        if (G[s].size() == NGraph::adjs[s].size()) continue; // L‚Î‚¹‚éƒpƒX‚ª‚È‚¢
         break;
     }
     int t = -1;
@@ -813,7 +616,7 @@ ModifyTreeResult modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, s
             k = pv[k];
         }
     }
-    // s->t ã®ãƒ‘ã‚¹ã‚’æ±‚ã‚ã‚‹
+    // s->t ‚ÌƒpƒX‚ğ‹‚ß‚é
     pv.assign(N, inf);
     pe.assign(N, inf);
     pv[s] = pe[s] = -1;
@@ -870,7 +673,7 @@ void show(const std::bitset<M_MAX>& B, int delay = 0) {
     std::vector<cv::Point> points;
     for (const auto& [x, y] : NInput::xys) {
         points.emplace_back(x + margin, y + margin);
-    }
+}
     cv::Mat3b img(width + margin * 2, width + margin * 2, cv::Vec3b(255, 255, 255));
     for (int n = 0; n < N; n++) {
         const auto& p = points[n];
@@ -904,7 +707,7 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
         if (v == p) continue;
         if (visited[v]) continue;
         dfs(G, visited, path, u, v);
-    }
+}
     path.push_back(u);
 }
 
@@ -914,38 +717,6 @@ std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, 
     dfs(G, visited, A, -1, 0);
     assert(A.size() <= NInput::LA);
     return A;
-}
-
-std::vector<int> compute_initial_A_2(const std::vector<int>& tour) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    for (int t : tour) {
-        if (!visited[t]) {
-            visited[t] = true;
-            A.push_back(t);
-        }
-    }
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A_3(const std::vector<int>& tour) {
-    std::map<int, std::vector<int>> ctr;
-    for (int i = 0; i + NInput::LB <= (int)tour.size(); i++) {
-        std::set<int> st({ tour[i] });
-        int j = i + 1;
-        while (j < (int)tour.size()) {
-            if (!st.count(tour[j]) && st.size() == NInput::LB) break;
-            st.insert(tour[j]);
-            j++;
-        }
-        ctr[j - i].push_back(i);
-        //dump(i, j - i, std::vector<int>(tour.begin() + i, tour.begin() + j));
-    }
-    for (const auto& [k, v] : ctr) {
-        std::cerr << k << ": " << v << '\n';
-    }
-    return {};
 }
 
 std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
@@ -1038,159 +809,17 @@ std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
     return { best_score, best_A, best_ans };
 }
 
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    std::vector<int> max_len(tour.size(), 0); // tour[i] ã‹ã‚‰ä¿¡å·å¤‰åŒ–ã«ã‚ˆã£ã¦é€²ã‚ã‚‹æœ€å¤§è·é›¢
-    std::vector<int> max_idx(tour.size(), -1); // æœ€å¤§è·é›¢ã‚’å®Ÿç¾ã™ã‚‹æ·»å­—
-    std::vector<int> signal(N);
-    for (int i = 0; i < NInput::LB; i++) {
-        signal[A[i]]++;
-    }
-    for (int a_idx = 0; a_idx < (int)A.size(); a_idx++) {
-
-        int t_idx = 0;
-        while (true) {
-            while (t_idx + 1 < (int)tour.size() && !signal[tour[t_idx + 1]]) t_idx++;
-            if (t_idx >= (int)tour.size() - 1) break;
-            int len = 0;
-            while (t_idx + len + 1 < (int)tour.size() && signal[tour[t_idx + len + 1]]) len++;
-            for (int i = 0; i < len; i++) {
-                if (chmax(max_len[t_idx + i], len - i)) {
-                    max_idx[t_idx + i] = a_idx;
-                }
-            }
-            t_idx += len + 2; // signal[tour[t_idx + len + 1] == false
-        }
-
-        if (a_idx + NInput::LB == A.size()) break;
-        signal[A[a_idx]]--;
-        signal[A[a_idx + NInput::LB]]++;
-    }
-
-    dump(max_len);
-    dump(max_idx);
-
-    return {};
-}
-
-// tour ã¨ A ãŒæ±ºã¾ã£ã¦ã„ã‚Œã°ã€é…åˆ— B ã‚’ç·å…¥ã‚Œæ›¿ãˆã™ã‚‹å‰æã§ã®æœ€å°ã‚³ã‚¹ãƒˆã¯æ±‚ã¾ã‚‹
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    std::vector<int> max_len(tour.size(), 0); // tour[i] ã‹ã‚‰ä¿¡å·å¤‰åŒ–ã«ã‚ˆã£ã¦é€²ã‚ã‚‹æœ€å¤§è·é›¢
-    std::vector<int> max_idx(tour.size(), -1); // æœ€å¤§è·é›¢ã‚’å®Ÿç¾ã™ã‚‹æ·»å­—
-    std::vector<int> signal(N);
-    for (int t_idx = 0; t_idx + 1 < (int)tour.size(); t_idx++) {
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]++;
-            }
-            int len = 0;
-            while (t_idx + len + 1 < (int)tour.size() && signal[tour[t_idx + len + 1]]) len++;
-            if (chmax(max_len[t_idx], len)) {
-                max_idx[t_idx] = a_idx;
-            }
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]--;
-            }
-        }
-    }
-    std::vector<int> dist((int)tour.size(), inf);
-    std::vector<int> prev((int)tour.size(), -1);
-    std::queue<int> qu;
-    dist[0] = 0;
-    qu.push(0);
-    while (!qu.empty()) {
-        int u = qu.front(); qu.pop();
-        int l = max_len[u];
-        for (int v = u + 1; v <= u + max_len[u]; v++) {
-            if (chmin(dist[v], dist[u] + 1)) {
-                prev[v] = u;
-                qu.push(v);
-            }
-        }
-    }
-    int t = (int)tour.size() - 1;
-    std::vector<int> path;
-    while (t != 0) {
-        path.push_back(t);
-        t = prev[t];
-    }
-    path.push_back(0);
-    std::reverse(path.begin(), path.end());
-    std::vector<std::string> ans;
-    int score = 0;
-    for (int i = 0; i + 1 < (int)path.size(); i++) {
-        int s = path[i];
-        ans.push_back(format("s %d %d 0", NInput::LB, max_idx[s]));
-        score++;
-        for (int t = s + 1; t <= path[i + 1]; t++) {
-            ans.push_back(format("m %d", tour[t]));
-        }
-    }
-    return { score, A, ans };
-}
-
-// ã‚±ãƒ„ã‹ã‚‰è²ªæ¬²ã§ååˆ†ï¼Ÿ
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive_2(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    int tail = (int)tour.size() - 1;
-    std::vector<int> signal(N);
-    std::vector<std::pair<int, int>> path;
-    path.emplace_back(tail, -1);
-    while (tail > 0) {
-        int min_ntail = INT_MAX, min_idx = -1;
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]++;
-            }
-            int ntail = tail;
-            while (ntail > 0 && signal[tour[ntail]]) ntail--;
-            if (chmin(min_ntail, ntail)) {
-                min_idx = a_idx;
-            }
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]--;
-            }
-        }
-        assert(min_ntail != tail);
-        path.emplace_back(min_ntail, min_idx);
-        tail = min_ntail;
-    }
-    std::reverse(path.begin(), path.end());
-    std::vector<std::string> ans;
-    int score = 0;
-    for (int i = 0; i + 1 < (int)path.size(); i++) {
-        const auto& [t1, a1] = path[i];
-        const auto& [t2, a2] = path[i + 1];
-        ans.push_back(format("s %d %d 0", NInput::LB, a1));
-        score++;
-        for (int t = t1 + 1; t <= t2; t++) {
-            ans.push_back(format("m %d", tour[t]));
-        }
-    }
-    return { score, A, ans };
-}
-
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
-    // ä½¿ç”¨é ‚ç‚¹æ•°ãŒå°‘ãªã„ã»ã©é…åˆ— A ã®ä½™å‰°ã‚¹ãƒšãƒ¼ã‚¹ãŒå¢—ãˆã‚‹ (-> ä¸€å›ã®ä¿¡å·å¤‰åŒ–ã§é€²ã‚ã‚‹è·é›¢ãŒå¢—ãˆã‚‹)
-    // ãƒ„ã‚¢ãƒ¼ãŒçŸ­ã„ã»ã©ç§»å‹•å›æ•°ãŒæ¸›ã‚‹ï¼ˆ-> ä¿¡å·å¤‰åŒ–ã®å›æ•°ã‚‚æ¸›ã‚‹ï¼‰
-    // ä¸¡è€…ã¯ãƒˆãƒ¬ãƒ¼ãƒ‰ã‚ªãƒ•ã®é–¢ä¿‚ã«ã‚ã‚‹ã®ã§ã€ã„ã„å¡©æ¢…ã‚’æ¢ã™å¿…è¦ãŒã‚ã‚‹
+    // g—p’¸“_”‚ª­‚È‚¢‚Ù‚Ç”z—ñ A ‚Ì—]èƒXƒy[ƒX‚ª‘‚¦‚é (-> ˆê‰ñ‚ÌM†•Ï‰»‚Åi‚ß‚é‹——£‚ª‘‚¦‚é)
+    // ƒcƒA[‚ª’Z‚¢‚Ù‚ÇˆÚ“®‰ñ”‚ªŒ¸‚éi-> M†•Ï‰»‚Ì‰ñ”‚àŒ¸‚éj
+    // —¼Ò‚ÍƒgƒŒ[ƒhƒIƒt‚ÌŠÖŒW‚É‚ ‚é‚Ì‚ÅA‚¢‚¢‰–”~‚ğ’T‚·•K—v‚ª‚ ‚é
 
-    // ä½¿ç”¨é ‚ç‚¹ã‚’å°‘ãªãã—ã¤ã¤ã€å¾€å¾©æ™‚ã« 2*LB å›ç¨‹åº¦ã®ç§»å‹•ã‚’ç¨¼ã’ã‚‹ã®ã§ã€æœ¨æ§‹é€ ã«è¿‘ã„ã‚°ãƒ©ãƒ•ãŒè‰¯ã„æ°—ãŒã—ã¦ã„ã‚‹
+    // g—p’¸“_‚ğ­‚È‚­‚µ‚Â‚ÂA‰•œ‚É 2*LB ‰ñ’ö“x‚ÌˆÚ“®‚ğ‰Ò‚°‚é‚Ì‚ÅA–Ø\‘¢‚É‹ß‚¢ƒOƒ‰ƒt‚ª—Ç‚¢‹C‚ª‚µ‚Ä‚¢‚é
 
-    // ã‚·ãƒ¥ã‚¿ã‚¤ãƒŠãƒ¼æœ¨ã‚’ä¸€æœ¬ç”Ÿæˆã™ã‚‹
-    // è¾ºã®ã‚«ãƒƒãƒˆ -> é€£çµ (or é€£çµ -> ã‚«ãƒƒãƒˆ) é·ç§»ã‚’è¡Œã†
-    // ãƒ„ã‚¢ãƒ¼ã®é•·ã•ã¨ä½¿ç”¨é ‚ç‚¹æ•°ã‚’è©•ä¾¡ã™ã‚‹
+    // ƒVƒ…ƒ^ƒCƒi[–Ø‚ğˆê–{¶¬‚·‚é
+    // •Ó‚ÌƒJƒbƒg -> ˜AŒ‹ (or ˜AŒ‹ -> ƒJƒbƒg) ‘JˆÚ‚ğs‚¤
+    // ƒcƒA[‚Ì’·‚³‚Æg—p’¸“_”‚ğ•]‰¿‚·‚é
 
     Timer timer;
 
@@ -1199,14 +828,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 27;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
     NInput::initialize(argc, argv, opt);
     NGraph::initialize(argc, argv, opt);
-
-    dump(NInput::LA, NInput::LB);
 
     NSteiner::set_terminals(NInput::tour_nodes);
     NSteiner::run(0);
@@ -1223,11 +850,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     int tour_length = compute_tour_length(g);
 
     int loop = 0;
-    while (timer.elapsed_ms() < 2300) {
+    while(timer.elapsed_ms() < 2600) {
         loop++;
         auto mtr = modify_tree(g, used_edge, rnd);
         if (!mtr.succeed) continue;
-        int ntour_length = compute_tour_length_2(g);
+        int ntour_length = compute_tour_length(g);
         if (tour_length < ntour_length) {
             undo_modify_tree(g, used_edge, mtr);
         }
@@ -1240,62 +867,21 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
     dump(loop, tour_length);
 
-    auto tour = compute_tour(g);
-    //compute_initial_A_3(tour);
-    //exit(1);
-    dump(tour.size());
     auto initial_A = compute_initial_A(g);
-    //auto initial_A = compute_initial_A_2(tour);
     dump(initial_A.size());
-    auto [score, A, ans] = solve(tour, initial_A);
-    dump(A.size(), score);
-    std::tie(score, A, ans) = solve_opt_naive_2(tour, A);
-    dump(A.size(), score);
-    while (A.size() < NInput::LA) A.push_back(0);
 
-    while (false) {
-        int min_dist = INT_MAX;
-        int min_e = -1;
-        std::bitset<N> used_v;
-        for (int e = 0; e < NInput::M; e++) {
-            const auto& [u, v] = NInput::uvs[e];
-            used_v[u] = used_v[v] = true;
-        }
-        for (int e = 0; e < NInput::M; e++) {
-            if (used_edge[e]) continue;
-            const auto& [u, v] = NInput::uvs[e];
-            if (!used_v[u] || !used_v[v]) continue;
-            g[u].emplace_back(v, e);
-            g[v].emplace_back(u, e);
-            used_edge[e] = true;
-            int dist = compute_tour_length(g);
-            if (chmin(min_dist, dist)) {
-                min_e = e;
-                //dump(e, dist);
-            }
-            remove_edge(g, e);
-            used_edge[e] = false;
-        }
-        {
-            const auto& [u, v] = NInput::uvs[min_e];
-            g[u].emplace_back(v, min_e);
-            g[v].emplace_back(u, min_e);
-            used_edge[min_e] = true;
-        }
-        auto initial_A = compute_initial_A(g);
-        //dump(initial_A.size());
-        auto tour = compute_tour(g);
-        //dump(tour.size());
-        auto [score, A, ans] = solve(tour, initial_A);
-        //dump(A.size(), score);
-        std::tie(score, A, ans) = solve_opt_naive(tour, A);
-        dump(min_e, score);
-    }
+    auto tour = compute_tour(g);
+    dump(tour.size());
+
+    auto [score, A, ans] = solve(tour, initial_A);
 
     dump(timer.elapsed_ms());
     assert(timer.elapsed_ms() < 2980);
 
-    NOutput::output(argc, argv, opt, A, ans);
+    std::cout << A[0];
+    for (int i = 1; i < (int)A.size(); i++) std::cout << ' ' << A[i];
+    std::cout << '\n';
+    for (const auto& s : ans) std::cout << s << '\n';
 
     dump(timer.elapsed_ms(), score);
 

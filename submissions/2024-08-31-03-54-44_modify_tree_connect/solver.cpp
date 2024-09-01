@@ -916,38 +916,6 @@ std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, 
     return A;
 }
 
-std::vector<int> compute_initial_A_2(const std::vector<int>& tour) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    for (int t : tour) {
-        if (!visited[t]) {
-            visited[t] = true;
-            A.push_back(t);
-        }
-    }
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A_3(const std::vector<int>& tour) {
-    std::map<int, std::vector<int>> ctr;
-    for (int i = 0; i + NInput::LB <= (int)tour.size(); i++) {
-        std::set<int> st({ tour[i] });
-        int j = i + 1;
-        while (j < (int)tour.size()) {
-            if (!st.count(tour[j]) && st.size() == NInput::LB) break;
-            st.insert(tour[j]);
-            j++;
-        }
-        ctr[j - i].push_back(i);
-        //dump(i, j - i, std::vector<int>(tour.begin() + i, tour.begin() + j));
-    }
-    for (const auto& [k, v] : ctr) {
-        std::cerr << k << ": " << v << '\n';
-    }
-    return {};
-}
-
 std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
     const std::vector<int>& tour,
     const std::vector<int>& initial_A,
@@ -1076,7 +1044,6 @@ std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt(
     return {};
 }
 
-// tour と A が決まっていれば、配列 B を総入れ替えする前提での最小コストは求まる
 std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive(
     const std::vector<int>& tour,
     const std::vector<int>& A
@@ -1136,50 +1103,6 @@ std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive(
     return { score, A, ans };
 }
 
-// ケツから貪欲で十分？
-std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive_2(
-    const std::vector<int>& tour,
-    const std::vector<int>& A
-) {
-    Perf perf(__FUNCTION__);
-    int tail = (int)tour.size() - 1;
-    std::vector<int> signal(N);
-    std::vector<std::pair<int, int>> path;
-    path.emplace_back(tail, -1);
-    while (tail > 0) {
-        int min_ntail = INT_MAX, min_idx = -1;
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]++;
-            }
-            int ntail = tail;
-            while (ntail > 0 && signal[tour[ntail]]) ntail--;
-            if (chmin(min_ntail, ntail)) {
-                min_idx = a_idx;
-            }
-            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
-                signal[A[i]]--;
-            }
-        }
-        assert(min_ntail != tail);
-        path.emplace_back(min_ntail, min_idx);
-        tail = min_ntail;
-    }
-    std::reverse(path.begin(), path.end());
-    std::vector<std::string> ans;
-    int score = 0;
-    for (int i = 0; i + 1 < (int)path.size(); i++) {
-        const auto& [t1, a1] = path[i];
-        const auto& [t2, a2] = path[i + 1];
-        ans.push_back(format("s %d %d 0", NInput::LB, a1));
-        score++;
-        for (int t = t1 + 1; t <= t2; t++) {
-            ans.push_back(format("m %d", tour[t]));
-        }
-    }
-    return { score, A, ans };
-}
-
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
     // 使用頂点数が少ないほど配列 A の余剰スペースが増える (-> 一回の信号変化で進める距離が増える)
@@ -1199,7 +1122,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 27;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
@@ -1240,57 +1163,40 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
     dump(loop, tour_length);
 
-    auto tour = compute_tour(g);
-    //compute_initial_A_3(tour);
-    //exit(1);
-    dump(tour.size());
-    auto initial_A = compute_initial_A(g);
-    //auto initial_A = compute_initial_A_2(tour);
-    dump(initial_A.size());
-    auto [score, A, ans] = solve(tour, initial_A);
-    dump(A.size(), score);
-    std::tie(score, A, ans) = solve_opt_naive_2(tour, A);
-    dump(A.size(), score);
-    while (A.size() < NInput::LA) A.push_back(0);
-
-    while (false) {
-        int min_dist = INT_MAX;
-        int min_e = -1;
+    {
         std::bitset<N> used_v;
         for (int e = 0; e < NInput::M; e++) {
-            const auto& [u, v] = NInput::uvs[e];
-            used_v[u] = used_v[v] = true;
+            if (used_edge[e]) {
+                auto [u, v] = NInput::uvs[e];
+                used_v[u] = used_v[v] = true;
+            }
         }
         for (int e = 0; e < NInput::M; e++) {
             if (used_edge[e]) continue;
-            const auto& [u, v] = NInput::uvs[e];
-            if (!used_v[u] || !used_v[v]) continue;
-            g[u].emplace_back(v, e);
-            g[v].emplace_back(u, e);
-            used_edge[e] = true;
-            int dist = compute_tour_length(g);
-            if (chmin(min_dist, dist)) {
-                min_e = e;
-                //dump(e, dist);
+            auto [u, v] = NInput::uvs[e];
+            if (used_v[u] && used_v[v]) {
+                g[u].emplace_back(v, e);
+                g[v].emplace_back(u, e);
+                used_edge[e] = true;
             }
-            remove_edge(g, e);
-            used_edge[e] = false;
         }
-        {
-            const auto& [u, v] = NInput::uvs[min_e];
-            g[u].emplace_back(v, min_e);
-            g[v].emplace_back(u, min_e);
-            used_edge[min_e] = true;
-        }
-        auto initial_A = compute_initial_A(g);
-        //dump(initial_A.size());
-        auto tour = compute_tour(g);
-        //dump(tour.size());
-        auto [score, A, ans] = solve(tour, initial_A);
-        //dump(A.size(), score);
-        std::tie(score, A, ans) = solve_opt_naive(tour, A);
-        dump(min_e, score);
     }
+
+    auto initial_A = compute_initial_A(g);
+    dump(initial_A.size());
+
+    auto tour = compute_tour(g);
+    dump(tour.size());
+
+    auto [score, A, ans] = solve(tour, initial_A);
+
+    dump(A.size(), score);
+
+    std::tie(score, A, ans) = solve_opt_naive(tour, A);
+
+    dump(A.size(), score);
+
+    while (A.size() < NInput::LA) A.push_back(0);
 
     dump(timer.elapsed_ms());
     assert(timer.elapsed_ms() < 2980);
