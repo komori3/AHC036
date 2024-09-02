@@ -299,6 +299,7 @@ namespace NGraph {
     std::array<std::array<int, N>, N> pess;  // edge from
 
     std::array<std::vector<std::pair<int, int>>, N> adjs;
+    //std::array<std::array<std::vector<int>, N>, N> pathss;
 
     int shortest_tour_length;
 
@@ -331,6 +332,17 @@ namespace NGraph {
                     qu.push(v);
                 }
             }
+            //for (int t = 0; t < N; t++) {
+            //    std::vector<int> path;
+            //    int u = t;
+            //    while (true) {
+            //        path.push_back(u);
+            //        u = pvs[u];
+            //        if (u == -1) break;
+            //    }
+            //    std::reverse(path.begin(), path.end());
+            //    pathss[s][t] = path;
+            //}
         }
         {
             shortest_tour_length = 0;
@@ -353,6 +365,7 @@ namespace NSteiner {
     std::array<std::pair<int, int>, N> min;
 
     std::bitset<M_MAX> B; // used edges
+    // TODO: used vertices?
 
     int edge_cost;
 
@@ -410,9 +423,243 @@ namespace NSteiner {
         return g;
     }
 
+    void show(int delay = 0) {
+#ifdef HAVE_OPENCV_HIGHGUI
+        std::vector<bool> to_visit(N);
+        to_visit[0] = true;
+        for (int t : NInput::ts) to_visit[t] = true;
+        constexpr int margin = 50;
+        constexpr int width = 1000;
+        std::vector<cv::Point> points;
+        for (const auto& [x, y] : NInput::xys) {
+            points.emplace_back(x + margin, y + margin);
+        }
+        cv::Mat3b img(width + margin * 2, width + margin * 2, cv::Vec3b(255, 255, 255));
+        for (int n = 0; n < N; n++) {
+            const auto& p = points[n];
+            if (to_visit[n]) {
+                cv::circle(img, p, 3, cv::Scalar(0, 0, 255), cv::FILLED);
+            }
+            else {
+                cv::circle(img, p, 2, cv::Scalar(0, 0, 255), cv::FILLED);
+            }
+        }
+        for (const auto& p : points) {
+            cv::circle(img, p, 2, cv::Scalar(0, 0, 255), cv::FILLED);
+        }
+        for (const auto& [u, v] : NInput::uvs) {
+            cv::line(img, points[u], points[v], cv::Scalar(224, 224, 224));
+        }
+        for (int e = 0; e < NInput::M; e++) {
+            if (!B[e]) continue;
+            const auto& [u, v] = NInput::uvs[e];
+            cv::line(img, points[u], points[v], cv::Scalar(0, 0, 255));
+        }
+        cv::imshow("img", img);
+        cv::waitKey(delay);
+#endif
+    }
+
 }
 
 namespace NLCA {
+
+    /*
+      The implementation of <O(n), O(1)> LCA with C++
+      varified with GRL_5_C
+
+      http://joisino.hatenablog.com/entry/2017/08/13/210000
+
+      Copyright (c) 2017 joisino
+      Released under the MIT license
+      http://opensource.org/licenses/mit-license.php
+     */
+
+    using namespace std;
+
+    template<class T>
+    class MinOp {
+    public:
+        T operator () (T a, T b) { return min(a, b); }
+    };
+
+    // sparse table
+    // static range semigroup query
+    // time complexity: <O(n log n), O(1)>
+    // OpFunc is binary operator: T x T -> T
+    template<typename T, typename OpFunc>
+    struct SparseTable {
+        OpFunc op;
+        int size;
+        vector<int> lg;
+        vector<vector<T> > table;
+        void init(const vector<T>& array, OpFunc opfunc) {
+            int n = array.size();
+            op = opfunc;
+
+            lg.assign(n + 1, 0);
+            for (int i = 1; i <= n; i++) {
+                lg[i] = 31 - __builtin_clz(i);
+            }
+
+            table.assign(lg[n] + 1, array);
+            for (int i = 1; i <= lg[n]; i++) {
+                for (int j = 0; j < n; j++) {
+                    if (j + (1 << (i - 1)) < n) {
+                        table[i][j] = op(table[i - 1][j], table[i - 1][j + (1 << (i - 1))]);
+                    }
+                    else {
+                        table[i][j] = table[i - 1][j];
+                    }
+                }
+            }
+        }
+        T query(int l, int r) {
+            assert(l < r);
+            return op(table[lg[r - l]][l], table[lg[r - l]][r - (1 << lg[r - l])]);
+        }
+    };
+
+
+    // plus minus one Range Minimum Query
+    // time complexity: <O(n), O(1)>
+    struct PMORMQ {
+        vector<int> a;
+        SparseTable<pair<int, int>, MinOp<pair<int, int> > > sparse_table;
+        vector<vector<vector<int> > > lookup_table;
+        vector<int> block_type;
+        int block_size, n_block;
+        void init(const vector<int>& array) {
+            a = array;
+            int n = a.size();
+            block_size = max(1, (31 - __builtin_clz(n)) / 2);
+            while (n % block_size != 0) {
+                a.push_back(a.back() + 1);
+                n++;
+            }
+            n_block = n / block_size;
+
+            vector<pair<int, int> > b(n_block, make_pair(INT_MAX, INT_MAX));
+            for (int i = 0; i < n; i++) {
+                b[i / block_size] = min(b[i / block_size], make_pair(a[i], i));
+            }
+            sparse_table.init(b, MinOp<pair<int, int> >());
+
+            block_type.assign(n_block, 0);
+            for (int i = 0; i < n_block; i++) {
+                int cur = 0;
+                for (int j = 0; j < block_size - 1; j++) {
+                    int ind = i * block_size + j;
+                    if (a[ind] < a[ind + 1]) {
+                        cur |= 1 << j;
+                    }
+                }
+                block_type[i] = cur;
+            }
+
+            lookup_table.assign(1 << (block_size - 1), vector<vector<int> >(block_size, vector<int>(block_size + 1)));
+            for (int i = 0; i < (1 << (block_size - 1)); i++) {
+                for (int j = 0; j < block_size; j++) {
+                    int res = 0;
+                    int cur = 0;
+                    int pos = j;
+                    for (int k = j + 1; k <= block_size; k++) {
+                        lookup_table[i][j][k] = pos;
+                        if (i & (1 << (k - 1))) {
+                            cur++;
+                        }
+                        else {
+                            cur--;
+                        }
+                        if (res > cur) {
+                            pos = k;
+                            res = cur;
+                        }
+                    }
+                }
+            }
+        }
+        int query(int l, int r) { // return position
+            assert(l < r);
+            int lb = l / block_size;
+            int rb = r / block_size;
+            if (lb == rb) {
+                return lb * block_size + lookup_table[block_type[lb]][l % block_size][r % block_size];
+            }
+            int pl = lb * block_size + lookup_table[block_type[lb]][l % block_size][block_size];
+            int pr = rb * block_size + lookup_table[block_type[rb]][0][r % block_size];
+            int pos = pl;
+            if (r % block_size > 0 && a[pl] > a[pr]) {
+                pos = pr;
+            }
+            if (lb + 1 == rb) {
+                return pos;
+            }
+            int sp = sparse_table.query(lb + 1, rb).second;
+            if (a[pos] > a[sp]) {
+                return sp;
+            }
+            return pos;
+        }
+    };
+
+    // LCA
+    // time complexity: <O(n), O(1)>
+    struct LCA {
+        int n;
+        vector<vector<int> > G;
+        PMORMQ rmq;
+        int cnt;
+        vector<int> depth, id, in;
+        void init(int size) {
+            n = size;
+            G.assign(n, vector<int>(0));
+        }
+        void add_edge(int a, int b) {
+            G[a].push_back(b);
+            G[b].push_back(a);
+        }
+        void dfs(int x, int p, int d) {
+            id[cnt] = x;
+            depth.push_back(d);
+            in[x] = cnt++;
+            for (int v : G[x]) {
+                if (v == p) {
+                    continue;
+                }
+                dfs(v, x, d + 1);
+                id[cnt] = x;
+                depth.push_back(d);
+                cnt++;
+            }
+        }
+        void precalc(int root) {
+            cnt = 0;
+            depth.clear();
+            in.assign(n, -1);
+            id.assign(2 * n - 1, -1);
+            dfs(root, -1, 0);
+            rmq.init(depth);
+        }
+        int lca(int a, int b) {
+            int x = in[a];
+            int y = in[b];
+            if (x > y) {
+                swap(x, y);
+            }
+            int pos = rmq.query(x, y + 1);
+            return id[pos];
+        }
+        int dist(int u) {
+            return depth[in[u]];
+        }
+    };
+
+    LCA lca;
+
+}
+
+namespace NLCA2 {
 
     using namespace std;
 
@@ -495,11 +742,45 @@ int compute_tour_length(const std::vector<std::vector<std::pair<int, int>>>& G) 
 }
 
 // 木に対するツアーの長さを計算 LCAで高速化
-int compute_tour_length_tree(const std::vector<std::vector<std::pair<int, int>>>& G) {
-    NLCA::lca.init(G);
+int compute_tour_length_tree2(const std::vector<std::vector<std::pair<int, int>>>& G) {
+    NLCA2::lca.init(G);
     int s = 0, len = 0;
     for (int t : NInput::ts) {
-        len += NLCA::lca.dist(s, t);
+        len += NLCA2::lca.dist(s, t);
+        s = t;
+    }
+    return len;
+}
+
+// 木に対するツアーの長さを計算 LCAで高速化
+int compute_tour_length_tree(const std::vector<std::vector<std::pair<int, int>>>& G) {
+    std::array<int, N> to_index;
+    to_index.fill(-1);
+    for (int u = 0; u < N; u++) {
+        to_index[u] = !G[u].empty();
+    }
+    int T = 0;
+    {
+        for (int u = 0; u < N; u++) {
+            if (to_index[u] == 1) {
+                to_index[u] = T;
+                T++;
+            }
+        }
+    }
+    NLCA::lca.init(T);
+    for (int u = 0; u < N; u++) {
+        for (const auto& [v, e] : G[u]) {
+            if (u < v) {
+                NLCA::lca.add_edge(to_index[u], to_index[v]);
+            }
+        }
+    }
+    NLCA::lca.precalc(0);
+    int s = 0, len = 0;
+    for (int t : NInput::ts) {
+        int a = to_index[s], b = to_index[t], l = NLCA::lca.lca(a, b);
+        len += NLCA::lca.dist(a) + NLCA::lca.dist(b) - 2 * NLCA::lca.dist(l);
         s = t;
     }
     return len;
@@ -556,10 +837,103 @@ void remove_edge(std::vector<std::vector<std::pair<int, int>>>& G, int e) {
 struct ModifyTreeResult {
     bool succeed;
     std::vector<int> added_edges;
-    std::vector<int> removed_edges;
+    int removed_edge;
 };
 
 ModifyTreeResult modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, Xorshift& rnd) {
+    // ある点 s を選択
+    // s から別の頂点へ、使われていない辺を経由してパスを繋ぐ
+    // 出来たサイクルの、繋いだパス以外の辺を 1 つ取り除く
+    int s = -1;
+    while (true) {
+        s = rnd.next_u32(N);
+        if (G[s].empty()) continue; // 孤立点
+        if (G[s].size() == NGraph::adjs[s].size()) continue; // 伸ばせるパスがない
+        break;
+    }
+    int t = -1;
+    std::vector<int> pv(N, inf), pe(N, inf);
+    std::queue<int> qu;
+    qu.push(s);
+    pv[s] = pe[s] = -1;
+    while (!qu.empty()) {
+        int u = qu.front(); qu.pop();
+        if (u != s && !G[u].empty()) {
+            t = u;
+            break;
+        }
+        for (const auto& [v, e] : NGraph::adjs[u]) {
+            if (pv[v] != inf || used_edge[e]) continue;
+            pv[v] = u;
+            pe[v] = e;
+            qu.push(v);
+        }
+    }
+    if (t == -1) {
+        return { false, {}, -1 };
+    }
+    std::vector<int> added_edges;
+    {
+        int k = t;
+        while (k != s) {
+            added_edges.push_back(pe[k]);
+            k = pv[k];
+        }
+    }
+    // s->t のパスを求める
+    pv.assign(N, inf);
+    pe.assign(N, inf);
+    pv[s] = pe[s] = -1;
+    while (!qu.empty()) qu.pop();
+    qu.push(s);
+    while (!qu.empty()) {
+        int u = qu.front(); qu.pop();
+        if (u == t) break;
+        for (const auto& [v, e] : G[u]) {
+            if (pv[v] != inf) continue;
+            pv[v] = u;
+            pe[v] = e;
+            qu.push(v);
+        }
+    }
+    std::vector<int> remove_candidate_edges;
+    {
+        int k = t;
+        while (k != s) {
+            remove_candidate_edges.push_back(pe[k]);
+            k = pv[k];
+        }
+    }
+    int removed_edge = remove_candidate_edges[rnd.next_u32(remove_candidate_edges.size())];
+    remove_edge(G, removed_edge);
+    used_edge[removed_edge] = false;
+    for (int e : added_edges) { // add
+        const auto& [u, v] = NInput::uvs[e];
+        G[u].emplace_back(v, e);
+        G[v].emplace_back(u, e);
+        used_edge[e] = true;
+    }
+    return { true, added_edges, removed_edge };
+}
+
+void undo_modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, const ModifyTreeResult& mtr) {
+    for (int e : mtr.added_edges) {
+        remove_edge(G, e);
+        used_edge[e] = false;
+    }
+    const auto& [u, v] = NInput::uvs[mtr.removed_edge];
+    G[u].emplace_back(v, mtr.removed_edge);
+    G[v].emplace_back(u, mtr.removed_edge);
+    used_edge[mtr.removed_edge] = true;
+}
+
+struct ModifyTreeResult2 {
+    bool succeed;
+    std::vector<int> added_edges;
+    std::vector<int> removed_edges;
+};
+
+ModifyTreeResult2 modify_tree2(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, Xorshift& rnd) {
     // ある点 s を選択
     // s から別の頂点へ、使われていない辺を経由してパスを繋ぐ
     // 出来たサイクルの、繋いだパス以外の辺を 1 つ取り除く
@@ -651,7 +1025,7 @@ ModifyTreeResult modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, s
     return { true, added_edges, removed_edges };
 }
 
-void undo_modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, const ModifyTreeResult& mtr) {
+void undo_modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bitset<M_MAX>& used_edge, const ModifyTreeResult2& mtr) {
     for (int e : mtr.added_edges) {
         remove_edge(G, e);
         used_edge[e] = false;
@@ -664,7 +1038,7 @@ void undo_modify_tree(std::vector<std::vector<std::pair<int, int>>>& G, std::bit
     }
 }
 
-void show(const std::bitset<M_MAX>& E, int delay = 0) {
+void show(const std::bitset<M_MAX>& B, int delay = 0) {
 #ifdef HAVE_OPENCV_HIGHGUI
     std::vector<bool> to_visit(N);
     to_visit[0] = true;
@@ -692,7 +1066,7 @@ void show(const std::bitset<M_MAX>& E, int delay = 0) {
         cv::line(img, points[u], points[v], cv::Scalar(224, 224, 224));
     }
     for (int e = 0; e < NInput::M; e++) {
-        if (!E[e]) continue;
+        if (!B[e]) continue;
         const auto& [u, v] = NInput::uvs[e];
         cv::line(img, points[u], points[v], cv::Scalar(0, 0, 255));
     }
@@ -751,6 +1125,38 @@ std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, 
     return A;
 }
 
+std::vector<int> compute_initial_A_2(const std::vector<int>& tour) {
+    std::vector<bool> visited(N);
+    std::vector<int> A;
+    for (int t : tour) {
+        if (!visited[t]) {
+            visited[t] = true;
+            A.push_back(t);
+        }
+    }
+    assert(A.size() <= NInput::LA);
+    return A;
+}
+
+std::vector<int> compute_initial_A_3(const std::vector<int>& tour) {
+    std::map<int, std::vector<int>> ctr;
+    for (int i = 0; i + NInput::LB <= (int)tour.size(); i++) {
+        std::set<int> st({ tour[i] });
+        int j = i + 1;
+        while (j < (int)tour.size()) {
+            if (!st.count(tour[j]) && st.size() == NInput::LB) break;
+            st.insert(tour[j]);
+            j++;
+        }
+        ctr[j - i].push_back(i);
+        //dump(i, j - i, std::vector<int>(tour.begin() + i, tour.begin() + j));
+    }
+    for (const auto& [k, v] : ctr) {
+        std::cerr << k << ": " << v << '\n';
+    }
+    return {};
+}
+
 std::pair<int, std::vector<int>> compute_modified_A(
     const std::vector<int>& tour,
     std::vector<int> A,
@@ -775,8 +1181,6 @@ std::pair<int, std::vector<int>> compute_modified_A(
         assert(head != max_head);
         for (int i = (int)A.size() - NInput::LB; i < (int)A.size(); i++) signal[A[i]]--;
         if (max_head - head <= thresh && A.size() < NInput::LA) {
-            //A.push_back(tour[head + 1]); // これは弱い
-            // これが強いので、tour の一部を追加する処理が有力？
             for (int k = head + 1; k < std::min((int)tour.size(), head + 1 + NInput::LB); k++) {
                 A.push_back(tour[k]);
                 if (A.size() == NInput::LA) break;
@@ -808,7 +1212,7 @@ std::pair<int, std::vector<int>> compute_modified_A(
         if (chmin(best_score, score)) {
             best_A = A;
             best_ans = ans;
-            dump(thresh, best_score);
+            //dump(thresh, best_score);
         }
         else {
             break;
@@ -833,6 +1237,66 @@ std::pair<int, std::vector<int>> compute_A(
 ) {
     auto initial_A = compute_initial_A(g, rnd);
     return compute_modified_A(tour, initial_A);
+}
+
+// tour と A が決まっていれば、配列 B を総入れ替えする前提での最小コストは求まる
+std::tuple<int, std::vector<int>, std::vector<std::string>> solve_opt_naive(
+    const std::vector<int>& tour,
+    const std::vector<int>& A
+) {
+    Perf perf(__FUNCTION__);
+    std::vector<int> max_len(tour.size(), 0); // tour[i] から信号変化によって進める最大距離
+    std::vector<int> max_idx(tour.size(), -1); // 最大距離を実現する添字
+    std::vector<int> signal(N);
+    for (int t_idx = 0; t_idx + 1 < (int)tour.size(); t_idx++) {
+        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
+            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
+                signal[A[i]]++;
+            }
+            int len = 0;
+            while (t_idx + len + 1 < (int)tour.size() && signal[tour[t_idx + len + 1]]) len++;
+            if (chmax(max_len[t_idx], len)) {
+                max_idx[t_idx] = a_idx;
+            }
+            for (int i = a_idx; i < a_idx + NInput::LB; i++) {
+                signal[A[i]]--;
+            }
+        }
+    }
+    std::vector<int> dist((int)tour.size(), inf);
+    std::vector<int> prev((int)tour.size(), -1);
+    std::queue<int> qu;
+    dist[0] = 0;
+    qu.push(0);
+    while (!qu.empty()) {
+        int u = qu.front(); qu.pop();
+        int l = max_len[u];
+        for (int v = u + 1; v <= u + max_len[u]; v++) {
+            if (chmin(dist[v], dist[u] + 1)) {
+                prev[v] = u;
+                qu.push(v);
+            }
+        }
+    }
+    int t = (int)tour.size() - 1;
+    std::vector<int> path;
+    while (t != 0) {
+        path.push_back(t);
+        t = prev[t];
+    }
+    path.push_back(0);
+    std::reverse(path.begin(), path.end());
+    std::vector<std::string> ans;
+    int score = 0;
+    for (int i = 0; i + 1 < (int)path.size(); i++) {
+        int s = path[i];
+        ans.push_back(format("s %d %d 0", NInput::LB, max_idx[s]));
+        score++;
+        for (int t = s + 1; t <= path[i + 1]; t++) {
+            ans.push_back(format("m %d", tour[t]));
+        }
+    }
+    return { score, A, ans };
 }
 
 // ケツから貪欲で十分
@@ -997,36 +1461,36 @@ int count_used_vertex(const std::vector<std::vector<std::pair<int, int>>>& g) {
     return used.count();
 }
 
-void tour_to_Bs(const std::vector<int>& tour) {
-    // 信号を理想的に変化させた際の最小の変化回数
-    std::set<int> bset;
-    std::vector<std::pair<int, std::vector<int>>> keyframes;
-    for (int t = (int)tour.size() - 1; t > 0; t--) {
-        if (bset.size() == NInput::LB && !bset.count(tour[t])) {
-            keyframes.emplace_back(t, std::vector<int>(bset.begin(), bset.end()));
-            bset.clear();
+void tree_length_annealing(
+    Timer& timer,
+    Xorshift& rnd,
+    double duration,
+    std::vector<std::vector<std::pair<int, int>>>& g,
+    std::bitset<M_MAX>& used_edge
+) {
+    int tree_len = used_edge.count();
+    dump(tree_len);
+    int loop = 0;
+    double start_time = timer.elapsed_ms(), now_time, end_time = start_time + duration;
+    double start_temp = 1.0, end_temp = 0.0;
+    while ((now_time = timer.elapsed_ms()) < end_time) {
+        loop++;
+        auto mtr = modify_tree2(g, used_edge, rnd);
+        if (!mtr.succeed) continue;
+        int diff = (int)mtr.added_edges.size() - (int)mtr.removed_edges.size();
+        double temp = get_temp(start_temp, end_temp, now_time - start_time, end_time - start_time);
+        double prob = exp(-diff / temp);
+        if (rnd.next_double() < prob) {
+            tree_len += diff;
         }
-        bset.insert(tour[t]);
-    }
-    keyframes.emplace_back(0, std::vector<int>(bset.begin(), bset.end()));
-    std::reverse(keyframes.begin(), keyframes.end());
-    for (const auto& [k, v] : keyframes) {
-        std::cerr << k << ": " << v << '\n';
-    }
-    const int min_signal_changes = (int)keyframes.size();
-    dump(min_signal_changes);
-    // 理想的な信号変化を実現するために必要な A の長さの概算
-    int cost = (int)keyframes.front().second.size();
-    for (int i = 0; i + 1 < (int)keyframes.size(); i++) {
-        const auto& [k1, v1] = keyframes[i];
-        const auto& [k2, v2] = keyframes[i + 1];
-        for (int x : v2) {
-            if (!std::count(v1.begin(), v1.end(), x)) {
-                cost++;
-            }
+        else {
+            undo_modify_tree(g, used_edge, mtr);
+        }
+        if (!(loop & 0xFFFF)) {
+            dump(loop, timer.elapsed_ms(), tree_len);
         }
     }
-    dump(cost);
+    dump(tree_len, compute_tour_length_tree(g));
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
@@ -1054,7 +1518,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 1;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
@@ -1077,17 +1541,30 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     int nvertices = count_used_vertex(g);
     dump(tour_length, nvertices, NGraph::shortest_tour_length);
 
+    std::vector<std::vector<std::pair<int, int>>> best_g;
+    int best_score = INT_MAX;
+
     int loop = 0;
     double start_time = timer.elapsed_ms(), now_time, end_time = 2500;
     double start_temp = 50.0, end_temp = 0.0;
     int vertice_coeff = 10;
     while ((now_time = timer.elapsed_ms()) < end_time) {
         loop++;
-        auto mtr = modify_tree(g, used_edge, rnd);
+        auto mtr = modify_tree2(g, used_edge, rnd);
         if (!mtr.succeed) continue;
-        int ntour_length = compute_tour_length_tree(g);
+        int ntour_length = compute_tour_length_tree2(g);
         int nnvertices = count_used_vertex(g);
         int diff = (nnvertices - nvertices) * vertice_coeff + (ntour_length - tour_length);
+#if 0
+        if (diff > 0) {
+        //if (tour_length < ntour_length) {
+            undo_modify_tree(g, used_edge, mtr);
+        }
+        else {
+            tour_length = ntour_length;
+            nvertices = nnvertices;
+        }
+#else
         double temp = get_temp(start_temp, end_temp, now_time - start_time, end_time - start_time);
         double prob = exp(-diff / temp);
         if (rnd.next_double() < prob) {
@@ -1097,7 +1574,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         else {
             undo_modify_tree(g, used_edge, mtr);
         }
-        if (!(loop & 0xFFF)) {
+#endif
+        if (!(loop & 0b111111111111)) {
             //if (timer.elapsed_ms() > 2000) {
             //    auto tour = compute_tour(g);
             //    auto [score, A] = compute_A(tour, g);
@@ -1114,8 +1592,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     //g = best_g;
     auto tour = compute_tour(g);
     dump(tour.size());
-    //tour_to_Bs(tour);
-    //exit(1);
     //while (true) {
     //    auto [score, A] = compute_A(tour, g, rnd);
     //    if (chmin(best_score, score)) {
@@ -1126,6 +1602,91 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     dump(A.size(), score);
 
     std::vector<std::string> ans;
+
+    if (false) {
+        std::vector<int> cands;
+        {
+            std::set<int> st(A.begin(), A.end());
+            cands.assign(st.begin(), st.end());
+        }
+
+        std::array<int, N> ctr;
+        for (int a : A) ctr[a]++;
+
+        int best_score = score;
+        int loop = 0;
+        while (true) {
+            int type = rnd.next_u32(10);
+            if (type < 9) {
+                int i = rnd.next_u32(A.size()), j;
+                do {
+                    j = rnd.next_u32(1, A.size());
+                } while (i == j);
+                if (i > j) std::swap(i, j);
+                std::reverse(A.begin() + i, A.begin() + j);
+                int nscore = compute_signal_cost(tour, A);
+                if (score < nscore) {
+                    std::reverse(A.begin() + i, A.begin() + j);
+                }
+                else {
+                    score = nscore;
+                    if (chmin(best_score, score)) {
+                        int sscore;
+                        std::tie(sscore, A, ans) = solve_segment(tour, A);
+                        dump(loop, "rev", score, sscore);
+                    }
+                }
+            }
+            else if (type < 10) {
+                int i, p, n;
+                while (true) {
+                    i = rnd.next_u32(A.size());
+                    if (ctr[A[i]] <= 1) continue;
+                    n = cands[rnd.next_u32(cands.size())];
+                    if (A[i] == n) continue;
+                    p = A[i];
+                    break;
+                }
+                ctr[p]--;
+                ctr[n]++;
+                A[i] = n;
+                int nscore = compute_signal_cost(tour, A);
+                if (score < nscore) {
+                    A[i] = p;
+                    ctr[n]--;
+                    ctr[p]++;
+                }
+                else {
+                    score = nscore;
+                    if (chmin(best_score, score)) {
+                        int sscore;
+                        std::tie(sscore, A, ans) = solve_segment(tour, A);
+                        dump(loop, "chg", score, sscore);
+                    }
+                }
+            }
+            else {
+                int i = rnd.next_u32(A.size()), j;
+                do {
+                    j = rnd.next_u32(A.size());
+                } while (i == j);
+                std::swap(A[i], A[j]);
+                int nscore = compute_signal_cost(tour, A);
+                if (score < nscore) {
+                    std::swap(A[i], A[j]);
+                }
+                else {
+                    score = nscore;
+                    if (chmin(best_score, score)) {
+                        int sscore;
+                        std::tie(sscore, A, ans) = solve_segment(tour, A);
+                        dump(loop, "swp", score, sscore);
+                    }
+                }
+            }
+            loop++;
+        }
+    }
 
     //for (int t = 0; t < 10; t++) {
     std::tie(score, A, ans) = solve_segment(tour, A);
