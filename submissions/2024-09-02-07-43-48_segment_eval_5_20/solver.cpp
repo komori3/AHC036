@@ -910,40 +910,10 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
     path.push_back(u);
 }
 
-// 帰りがけで配列 A を作成
-void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<bool>& visited, std::vector<int>& path, int p, int u, Xorshift& rnd) {
-    visited[u] = true;
-    //path.push_back(u);
-    std::vector<int> r(G[u].size());
-    std::iota(r.begin(), r.end(), 0);
-    shuffle_vector(r, rnd);
-    for (int i = 0; i < G[u].size(); i++) {
-    //for (const auto& [v, e] : G[u]) {
-        const auto& [v, e] = G[u][r[i]];
-        if (v == p) continue;
-        if (visited[v]) continue;
-        dfs(G, visited, path, u, v);
-    }
-    path.push_back(u);
-}
-
-
 std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G) {
     std::vector<bool> visited(N);
     std::vector<int> A;
     dfs(G, visited, A, -1, 0);
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G, Xorshift& rnd) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    int s = -1;
-    do {
-        s = rnd.next_u32(N);
-    } while (G[s].empty());
-    dfs(G, visited, A, -1, s);
     assert(A.size() <= NInput::LA);
     return A;
 }
@@ -1050,15 +1020,6 @@ std::pair<int, std::vector<int>> compute_A(
     const std::vector<std::vector<std::pair<int, int>>>& g
 ) {
     auto initial_A = compute_initial_A(g);
-    return compute_modified_A(tour, initial_A);
-}
-
-std::pair<int, std::vector<int>> compute_A(
-    const std::vector<int>& tour,
-    const std::vector<std::vector<std::pair<int, int>>>& g,
-    Xorshift& rnd
-) {
-    auto initial_A = compute_initial_A(g, rnd);
     return compute_modified_A(tour, initial_A);
 }
 
@@ -1310,7 +1271,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 4;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
@@ -1382,12 +1343,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     g = best_g;
     auto tour = compute_tour(g);
     dump(tour.size());
-    //while (true) {
-    //    auto [score, A] = compute_A(tour, g, rnd);
-    //    if (chmin(best_score, score)) {
-    //        dump(score);
-    //    }
-    //}
     auto [score, A] = compute_A(tour, g);
     dump(A.size(), score);
 

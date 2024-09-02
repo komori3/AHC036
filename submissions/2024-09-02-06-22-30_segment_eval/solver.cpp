@@ -910,40 +910,10 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
     path.push_back(u);
 }
 
-// 帰りがけで配列 A を作成
-void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<bool>& visited, std::vector<int>& path, int p, int u, Xorshift& rnd) {
-    visited[u] = true;
-    //path.push_back(u);
-    std::vector<int> r(G[u].size());
-    std::iota(r.begin(), r.end(), 0);
-    shuffle_vector(r, rnd);
-    for (int i = 0; i < G[u].size(); i++) {
-    //for (const auto& [v, e] : G[u]) {
-        const auto& [v, e] = G[u][r[i]];
-        if (v == p) continue;
-        if (visited[v]) continue;
-        dfs(G, visited, path, u, v);
-    }
-    path.push_back(u);
-}
-
-
 std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G) {
     std::vector<bool> visited(N);
     std::vector<int> A;
     dfs(G, visited, A, -1, 0);
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G, Xorshift& rnd) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    int s = -1;
-    do {
-        s = rnd.next_u32(N);
-    } while (G[s].empty());
-    dfs(G, visited, A, -1, s);
     assert(A.size() <= NInput::LA);
     return A;
 }
@@ -1050,15 +1020,6 @@ std::pair<int, std::vector<int>> compute_A(
     const std::vector<std::vector<std::pair<int, int>>>& g
 ) {
     auto initial_A = compute_initial_A(g);
-    return compute_modified_A(tour, initial_A);
-}
-
-std::pair<int, std::vector<int>> compute_A(
-    const std::vector<int>& tour,
-    const std::vector<std::vector<std::pair<int, int>>>& g,
-    Xorshift& rnd
-) {
-    auto initial_A = compute_initial_A(g, rnd);
     return compute_modified_A(tour, initial_A);
 }
 
@@ -1310,7 +1271,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 4;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
@@ -1330,51 +1291,29 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     auto used_edge = NSteiner::B;
 
     int tour_length = compute_tour_length(g);
-    int nvertices = count_used_vertex(g);
-    dump(tour_length, nvertices);
 
     std::vector<std::vector<std::pair<int, int>>> best_g;
     int best_score = INT_MAX;
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 2300;
-    double start_temp = 5.0, end_temp = 0.0;
-    int vertice_coeff = 20;
-    while ((now_time = timer.elapsed_ms()) < end_time) {
+    while (timer.elapsed_ms() < 2300) {
         loop++;
         auto mtr = modify_tree(g, used_edge, rnd);
         if (!mtr.succeed) continue;
         int ntour_length = compute_tour_length_tree(g);
-        int nnvertices = count_used_vertex(g);
-        int diff = (nnvertices - nvertices) * vertice_coeff + (ntour_length - tour_length);
-#if 0
-        if (diff > 0) {
-        //if (tour_length < ntour_length) {
+        if (tour_length < ntour_length) {
             undo_modify_tree(g, used_edge, mtr);
         }
         else {
             tour_length = ntour_length;
-            nvertices = nnvertices;
         }
-#else
-        double temp = get_temp(start_temp, end_temp, now_time - start_time, end_time - start_time);
-        double prob = exp(-diff / temp);
-        if (rnd.next_double() < prob) {
-            tour_length = ntour_length;
-            nvertices = nnvertices;
-        }
-        else {
-            undo_modify_tree(g, used_edge, mtr);
-        }
-#endif
-        if (!(loop & 0b1111111111)) {
+        if (loop % 1000 == 0) {
             auto tour = compute_tour(g);
             auto [score, A] = compute_A(tour, g);
             if (chmin(best_score, score)) {
                 best_g = g;
-                dump(loop, timer.elapsed_ms(), tour_length, nvertices, score);
+                dump(loop, tour.size(), score);
             }
-            //dump(loop, timer.elapsed_ms(), tour_length, nvertices);
         }
     }
     dump(loop, tour_length);
@@ -1382,12 +1321,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     g = best_g;
     auto tour = compute_tour(g);
     dump(tour.size());
-    //while (true) {
-    //    auto [score, A] = compute_A(tour, g, rnd);
-    //    if (chmin(best_score, score)) {
-    //        dump(score);
-    //    }
-    //}
     auto [score, A] = compute_A(tour, g);
     dump(A.size(), score);
 
@@ -1485,7 +1418,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     //}
 
     dump(timer.elapsed_ms());
-    //assert(timer.elapsed_ms() < 2980);
+    assert(timer.elapsed_ms() < 2980);
 
     NOutput::output(argc, argv, opt, A, ans);
 

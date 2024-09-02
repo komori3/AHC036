@@ -910,40 +910,10 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
     path.push_back(u);
 }
 
-// 帰りがけで配列 A を作成
-void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<bool>& visited, std::vector<int>& path, int p, int u, Xorshift& rnd) {
-    visited[u] = true;
-    //path.push_back(u);
-    std::vector<int> r(G[u].size());
-    std::iota(r.begin(), r.end(), 0);
-    shuffle_vector(r, rnd);
-    for (int i = 0; i < G[u].size(); i++) {
-    //for (const auto& [v, e] : G[u]) {
-        const auto& [v, e] = G[u][r[i]];
-        if (v == p) continue;
-        if (visited[v]) continue;
-        dfs(G, visited, path, u, v);
-    }
-    path.push_back(u);
-}
-
-
 std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G) {
     std::vector<bool> visited(N);
     std::vector<int> A;
     dfs(G, visited, A, -1, 0);
-    assert(A.size() <= NInput::LA);
-    return A;
-}
-
-std::vector<int> compute_initial_A(const std::vector<std::vector<std::pair<int, int>>>& G, Xorshift& rnd) {
-    std::vector<bool> visited(N);
-    std::vector<int> A;
-    int s = -1;
-    do {
-        s = rnd.next_u32(N);
-    } while (G[s].empty());
-    dfs(G, visited, A, -1, s);
     assert(A.size() <= NInput::LA);
     return A;
 }
@@ -980,11 +950,13 @@ std::vector<int> compute_initial_A_3(const std::vector<int>& tour) {
     return {};
 }
 
-std::pair<int, std::vector<int>> compute_modified_A(
+std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
     const std::vector<int>& tour,
-    std::vector<int> A,
+    const std::vector<int>& initial_A,
     const int thresh
 ) {
+    std::vector<int> A(initial_A);
+    std::vector<std::string> ans;
     static std::array<int, N> signal{};
     int head = 0, score = 0;
     while (head + 1 < (int)tour.size()) {
@@ -1011,17 +983,24 @@ std::pair<int, std::vector<int>> compute_modified_A(
             continue;
         }
         score++;
-        head = max_head;
+        ans.push_back(format("s %d %d 0", NInput::LB, max_a));
+        //dump(best_nidx - idx);
+        while (head < max_head) {
+            head++;
+            ans.push_back(format("m %d", tour[head]));
+        }
+        //dump(best_begin, best_nidx);
     }
     //dump(score);
-    //while (A.size() < NInput::LA) A.push_back(0);
-    return { score, A };
+    while (A.size() < NInput::LA) A.push_back(0);
+    return { score, A, ans };
 }
 
-std::pair<int, std::vector<int>> compute_modified_A(
+std::tuple<int, std::vector<int>, std::vector<std::string>> solve(
     const std::vector<int>& tour,
     const std::vector<int>& initial_A
 ) {
+    Perf perf(__FUNCTION__);
     int best_score = INT_MAX;
     std::vector<int> best_A;
     std::vector<std::string> best_ans;
@@ -1031,35 +1010,18 @@ std::pair<int, std::vector<int>> compute_modified_A(
     std::vector<std::string> ans;
 
     for (int thresh = 1;; thresh++) {
-        std::tie(score, A) = compute_modified_A(tour, initial_A, thresh);
+        std::tie(score, A, ans) = solve(tour, initial_A, thresh);
         if (chmin(best_score, score)) {
             best_A = A;
             best_ans = ans;
-            //dump(thresh, best_score);
+            dump(thresh, best_score);
         }
         else {
             break;
         }
     }
 
-    return { best_score, best_A };
-}
-
-std::pair<int, std::vector<int>> compute_A(
-    const std::vector<int>& tour,
-    const std::vector<std::vector<std::pair<int, int>>>& g
-) {
-    auto initial_A = compute_initial_A(g);
-    return compute_modified_A(tour, initial_A);
-}
-
-std::pair<int, std::vector<int>> compute_A(
-    const std::vector<int>& tour,
-    const std::vector<std::vector<std::pair<int, int>>>& g,
-    Xorshift& rnd
-) {
-    auto initial_A = compute_initial_A(g, rnd);
-    return compute_modified_A(tour, initial_A);
+    return { best_score, best_A, best_ans };
 }
 
 // tour と A が決まっていれば、配列 B を総入れ替えする前提での最小コストは求まる
@@ -1241,7 +1203,7 @@ std::tuple<int, std::vector<int>, std::vector<std::string>> solve_segment(
         }
         head = nhead;
     }
-    //dump(score);
+    dump(score);
     return { score, A, ans };
 }
 
@@ -1310,7 +1272,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 4;
+    opt.seed = 5;
 
     std::cerr << opt << '\n';
 
@@ -1330,162 +1292,60 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     auto used_edge = NSteiner::B;
 
     int tour_length = compute_tour_length(g);
-    int nvertices = count_used_vertex(g);
-    dump(tour_length, nvertices);
-
-    std::vector<std::vector<std::pair<int, int>>> best_g;
-    int best_score = INT_MAX;
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 2300;
-    double start_temp = 5.0, end_temp = 0.0;
-    int vertice_coeff = 20;
-    while ((now_time = timer.elapsed_ms()) < end_time) {
+    while (timer.elapsed_ms() < 2300) {
         loop++;
         auto mtr = modify_tree(g, used_edge, rnd);
         if (!mtr.succeed) continue;
         int ntour_length = compute_tour_length_tree(g);
-        int nnvertices = count_used_vertex(g);
-        int diff = (nnvertices - nvertices) * vertice_coeff + (ntour_length - tour_length);
-#if 0
-        if (diff > 0) {
-        //if (tour_length < ntour_length) {
+        if (tour_length < ntour_length) {
             undo_modify_tree(g, used_edge, mtr);
         }
         else {
             tour_length = ntour_length;
-            nvertices = nnvertices;
-        }
-#else
-        double temp = get_temp(start_temp, end_temp, now_time - start_time, end_time - start_time);
-        double prob = exp(-diff / temp);
-        if (rnd.next_double() < prob) {
-            tour_length = ntour_length;
-            nvertices = nnvertices;
-        }
-        else {
-            undo_modify_tree(g, used_edge, mtr);
-        }
-#endif
-        if (!(loop & 0b1111111111)) {
-            auto tour = compute_tour(g);
-            auto [score, A] = compute_A(tour, g);
-            if (chmin(best_score, score)) {
-                best_g = g;
-                dump(loop, timer.elapsed_ms(), tour_length, nvertices, score);
-            }
-            //dump(loop, timer.elapsed_ms(), tour_length, nvertices);
         }
     }
     dump(loop, tour_length);
 
-    g = best_g;
     auto tour = compute_tour(g);
-    dump(tour.size());
-    //while (true) {
-    //    auto [score, A] = compute_A(tour, g, rnd);
-    //    if (chmin(best_score, score)) {
-    //        dump(score);
-    //    }
-    //}
-    auto [score, A] = compute_A(tour, g);
+
+    auto g2(g);
+    {
+        //show(used_edge);
+        std::bitset<N> used_v;
+        for (int e = 0; e < NInput::M; e++) {
+            if (used_edge[e]) {
+                auto [u, v] = NInput::uvs[e];
+                used_v[u] = used_v[v] = true;
+            }
+        }
+        dump(used_v.count());
+        for (int e = 0; e < NInput::M; e++) {
+            if (used_edge[e]) continue;
+            auto [u, v] = NInput::uvs[e];
+            if (used_v[u] && used_v[v]) {
+                g2[u].emplace_back(v, e);
+                g2[v].emplace_back(u, e);
+                used_edge[e] = true;
+            }
+        }
+        //show(used_edge);
+    }
+    auto tour2 = compute_tour(g2);
+
+    dump(tour.size(), tour2.size());
+    auto initial_A = compute_initial_A(g);
+    dump(initial_A.size());
+    auto [score, A, ans] = solve(tour2, initial_A);
     dump(A.size(), score);
 
-    std::vector<std::string> ans;
-
-    if (false) {
-        std::vector<int> cands;
-        {
-            std::set<int> st(A.begin(), A.end());
-            cands.assign(st.begin(), st.end());
-        }
-
-        std::array<int, N> ctr;
-        for (int a : A) ctr[a]++;
-
-        int best_score = score;
-        int loop = 0;
-        while (true) {
-            int type = rnd.next_u32(10);
-            if (type < 9) {
-                int i = rnd.next_u32(A.size()), j;
-                do {
-                    j = rnd.next_u32(1, A.size());
-                } while (i == j);
-                if (i > j) std::swap(i, j);
-                std::reverse(A.begin() + i, A.begin() + j);
-                int nscore = compute_signal_cost(tour, A);
-                if (score < nscore) {
-                    std::reverse(A.begin() + i, A.begin() + j);
-                }
-                else {
-                    score = nscore;
-                    if (chmin(best_score, score)) {
-                        int sscore;
-                        std::tie(sscore, A, ans) = solve_segment(tour, A);
-                        dump(loop, "rev", score, sscore);
-                    }
-                }
-            }
-            else if (type < 10) {
-                int i, p, n;
-                while (true) {
-                    i = rnd.next_u32(A.size());
-                    if (ctr[A[i]] <= 1) continue;
-                    n = cands[rnd.next_u32(cands.size())];
-                    if (A[i] == n) continue;
-                    p = A[i];
-                    break;
-                }
-                ctr[p]--;
-                ctr[n]++;
-                A[i] = n;
-                int nscore = compute_signal_cost(tour, A);
-                if (score < nscore) {
-                    A[i] = p;
-                    ctr[n]--;
-                    ctr[p]++;
-                }
-                else {
-                    score = nscore;
-                    if (chmin(best_score, score)) {
-                        int sscore;
-                        std::tie(sscore, A, ans) = solve_segment(tour, A);
-                        dump(loop, "chg", score, sscore);
-                    }
-                }
-            }
-            else {
-                int i = rnd.next_u32(A.size()), j;
-                do {
-                    j = rnd.next_u32(A.size());
-                } while (i == j);
-                std::swap(A[i], A[j]);
-                int nscore = compute_signal_cost(tour, A);
-                if (score < nscore) {
-                    std::swap(A[i], A[j]);
-                }
-                else {
-                    score = nscore;
-                    if (chmin(best_score, score)) {
-                        int sscore;
-                        std::tie(sscore, A, ans) = solve_segment(tour, A);
-                        dump(loop, "swp", score, sscore);
-                    }
-                }
-            }
-            loop++;
-        }
-    }
-
     //for (int t = 0; t < 10; t++) {
-    std::tie(score, A, ans) = solve_segment(tour, A);
-    dump(score, NInput::LA, A.size());
-    while (A.size() < NInput::LA) A.push_back(0);
+    //    std::tie(score, A, ans) = solve_segment(tour, A);
     //}
 
     dump(timer.elapsed_ms());
-    //assert(timer.elapsed_ms() < 2980);
+    assert(timer.elapsed_ms() < 2980);
 
     NOutput::output(argc, argv, opt, A, ans);
 
