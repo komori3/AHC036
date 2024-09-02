@@ -1398,37 +1398,6 @@ int count_used_vertex(const std::vector<std::vector<std::pair<int, int>>>& g) {
     return used.count();
 }
 
-void tree_length_annealing(
-    Timer& timer,
-    Xorshift& rnd,
-    double duration,
-    std::vector<std::vector<std::pair<int, int>>>& g,
-    std::bitset<M_MAX>& used_edge
-) {
-    int tree_len = used_edge.count();
-    dump(tree_len);
-    int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = start_time + duration;
-    double start_temp = 1.0, end_temp = 0.0;
-    while ((now_time = timer.elapsed_ms()) < end_time) {
-        loop++;
-        auto mtr = modify_tree2(g, used_edge, rnd);
-        if (!mtr.succeed) continue;
-        int diff = (int)mtr.added_edges.size() - (int)mtr.removed_edges.size();
-        double temp = get_temp(start_temp, end_temp, now_time - start_time, end_time - start_time);
-        double prob = exp(-diff / temp);
-        if (rnd.next_double() < prob) {
-            tree_len += diff;
-        }
-        else {
-            undo_modify_tree(g, used_edge, mtr);
-        }
-        if (!(loop & 0xFFFF)) {
-            dump(loop, timer.elapsed_ms(), tree_len);
-        }
-    }
-    dump(tree_len, compute_tour_length_tree(g));
-}
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
@@ -1476,15 +1445,15 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
     int tour_length = compute_tour_length(g);
     int nvertices = count_used_vertex(g);
-    dump(tour_length, nvertices, NGraph::shortest_tour_length);
+    dump(tour_length, nvertices);
 
     std::vector<std::vector<std::pair<int, int>>> best_g;
     int best_score = INT_MAX;
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 9900;
-    double start_temp = 100.0, end_temp = 0.0;
-    int vertice_coeff = 20;
+    double start_time = timer.elapsed_ms(), now_time, end_time = 2300;
+    double start_temp = 50.0, end_temp = 0.0;
+    int vertice_coeff = 10;
     while ((now_time = timer.elapsed_ms()) < end_time) {
         loop++;
         auto mtr = modify_tree2(g, used_edge, rnd);
