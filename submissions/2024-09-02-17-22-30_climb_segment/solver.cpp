@@ -721,7 +721,7 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
     std::iota(r.begin(), r.end(), 0);
     shuffle_vector(r, rnd);
     for (int i = 0; i < G[u].size(); i++) {
-        //for (const auto& [v, e] : G[u]) {
+    //for (const auto& [v, e] : G[u]) {
         const auto& [v, e] = G[u][r[i]];
         if (v == p) continue;
         if (visited[v]) continue;
@@ -1081,7 +1081,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 27;
+    opt.seed = 0;
 
     std::cerr << opt << '\n';
 
@@ -1089,10 +1089,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     NGraph::initialize(argc, argv, opt);
 
     dump(NInput::LA, NInput::LB);
-    const int prod = NInput::LA * NInput::LB;
-    const int estimate_time = 400.0 * prod / 28800;
-    const double timelimit = 2500 + 400 - estimate_time;
-    dump(prod, estimate_time, timelimit);
 
     NSteiner::set_terminals(NInput::tour_nodes);
     NSteiner::run(0);
@@ -1109,8 +1105,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     dump(tour_length, nvertices, NGraph::shortest_tour_length);
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 1250;
-    double start_temp = 20.0, end_temp = 0.0;
+    double start_time = timer.elapsed_ms(), now_time, end_time = 1500;
+    double start_temp = 50.0, end_temp = 0.0;
     int vertice_coeff = 10;
     while ((now_time = timer.elapsed_ms()) < end_time) {
         loop++;
@@ -1149,7 +1145,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     auto A = compute_initial_A(g);
 
     SegmentModifier smod(timer, rnd, tour, A);
-    smod.run(timelimit - timer.elapsed_ms());
+    smod.run(2500 - timer.elapsed_ms());
 
     A = smod.A;
 

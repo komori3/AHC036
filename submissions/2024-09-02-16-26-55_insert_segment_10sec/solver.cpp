@@ -721,7 +721,7 @@ void dfs(const std::vector<std::vector<std::pair<int, int>>>& G, std::vector<boo
     std::iota(r.begin(), r.end(), 0);
     shuffle_vector(r, rnd);
     for (int i = 0; i < G[u].size(); i++) {
-        //for (const auto& [v, e] : G[u]) {
+    //for (const auto& [v, e] : G[u]) {
         const auto& [v, e] = G[u][r[i]];
         if (v == p) continue;
         if (visited[v]) continue;
@@ -954,107 +954,37 @@ int count_used_vertex(const std::vector<std::vector<std::pair<int, int>>>& g) {
     return used.count();
 }
 
-int compute_signal_cost(
-    const std::vector<int>& tour,
-    const std::vector<int>& A,
-    const int pruning_thresh
-) {
-    static std::array<int, N> signal{};
-    //Perf perf(__FUNCTION__);
-    int tail = (int)tour.size() - 1;
-    int cost = 0;
-    while (tail > 0) {
-        int min_ntail = INT_MAX, min_idx = -1;
-        for (int i = 0; i < NInput::LB; i++) signal[A[i]]++;
-        for (int a_idx = 0; a_idx + NInput::LB <= (int)A.size(); a_idx++) {
-            int ntail = tail;
-            while (ntail > 0 && signal[tour[ntail]]) ntail--;
-            if (chmin(min_ntail, ntail)) {
-                min_idx = a_idx;
-            }
-            if (a_idx + NInput::LB == (int)A.size()) break;
-            signal[A[a_idx]]--;
-            signal[A[a_idx + NInput::LB]]++;
+void tour_to_Bs(const std::vector<int>& tour) {
+    // 信号を理想的に変化させた際の最小の変化回数
+    std::set<int> bset;
+    std::vector<std::pair<int, std::vector<int>>> keyframes;
+    for (int t = (int)tour.size() - 1; t > 0; t--) {
+        if (bset.size() == NInput::LB && !bset.count(tour[t])) {
+            keyframes.emplace_back(t, std::vector<int>(bset.begin(), bset.end()));
+            bset.clear();
         }
-        for (int i = (int)A.size() - NInput::LB; i < (int)A.size(); i++) signal[A[i]]--;
-        if (min_ntail == tail) return inf;
-        tail = min_ntail;
-        cost++;
-        if (pruning_thresh < cost) return inf;
+        bset.insert(tour[t]);
     }
-    return cost;
+    keyframes.emplace_back(0, std::vector<int>(bset.begin(), bset.end()));
+    std::reverse(keyframes.begin(), keyframes.end());
+    for (const auto& [k, v] : keyframes) {
+        std::cerr << k << ": " << v << '\n';
+    }
+    const int min_signal_changes = (int)keyframes.size();
+    dump(min_signal_changes);
+    // 理想的な信号変化を実現するために必要な A の長さの概算
+    int cost = (int)keyframes.front().second.size();
+    for (int i = 0; i + 1 < (int)keyframes.size(); i++) {
+        const auto& [k1, v1] = keyframes[i];
+        const auto& [k2, v2] = keyframes[i + 1];
+        for (int x : v2) {
+            if (!std::count(v1.begin(), v1.end(), x)) {
+                cost++;
+            }
+        }
+    }
+    dump(cost);
 }
-
-struct SegmentModifier {
-
-    Timer& timer;
-    Xorshift& rnd;
-    std::vector<int> tour;
-    std::vector<int> A;
-
-    int margin;
-    int nsegment;
-    std::vector<std::pair<int, int>> segments;
-    std::vector<int> tour_lefts;
-
-    int cost;
-
-    void assign_segment(int segment_id, int tour_left) {
-        const auto& [a_left, length] = segments[segment_id];
-        for (int i = 0; i < length; i++) {
-            A[a_left + i] = tour[tour_left + i];
-        }
-        tour_lefts[segment_id] = tour_left;
-    }
-
-    SegmentModifier(
-        Timer& timer_,
-        Xorshift& rnd_,
-        const std::vector<int> tour_,
-        const std::vector<int>& A_
-    ) : timer(timer_), rnd(rnd_), tour(tour_), A(A_) {
-        margin = NInput::LA - (int)A.size();
-        nsegment = (margin + NInput::LB - 1) / NInput::LB;
-        segments.resize(nsegment);
-        for (int i = 0; i < nsegment; i++) {
-            int a_left = (int)A.size() + i * NInput::LB;
-            int end_pos = std::min(NInput::LA, a_left + NInput::LB);
-            int length = end_pos - a_left;
-            segments[i] = std::make_pair(a_left, length);
-        }
-        while (A.size() < NInput::LA) A.push_back(0);
-        tour_lefts.resize(nsegment);
-        for (int i = 0; i < nsegment; i++) {
-            const auto& [a_left, length] = segments[i];
-            int tour_left = rnd.next_u32((int)tour.size() - length);
-            assign_segment(i, tour_left);
-        }
-        cost = compute_signal_cost(tour, A);
-    }
-
-    void run(double duration) {
-        const double end_time = timer.elapsed_ms() + duration;
-        int loop = 0;
-        while (timer.elapsed_ms() < end_time) {
-            int segment_id = rnd.next_u32(nsegment);
-            const auto& [a_left, length] = segments[segment_id];
-            int ptour_left = tour_lefts[segment_id];
-            int tour_left = rnd.next_u32((int)tour.size() - length);
-            assign_segment(segment_id, tour_left);
-            int ncost = compute_signal_cost(tour, A, cost);
-            if (cost < ncost) {
-                assign_segment(segment_id, ptour_left);
-            }
-            else {
-                cost = ncost;
-                dump(cost);
-            }
-            loop++;
-        }
-        dump(loop, cost);
-    }
-
-};
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 
@@ -1081,7 +1011,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #endif
 
     Option opt;
-    opt.seed = 27;
+    opt.seed = 2;
 
     std::cerr << opt << '\n';
 
@@ -1089,10 +1019,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     NGraph::initialize(argc, argv, opt);
 
     dump(NInput::LA, NInput::LB);
-    const int prod = NInput::LA * NInput::LB;
-    const int estimate_time = 400.0 * prod / 28800;
-    const double timelimit = 2500 + 400 - estimate_time;
-    dump(prod, estimate_time, timelimit);
 
     NSteiner::set_terminals(NInput::tour_nodes);
     NSteiner::run(0);
@@ -1109,8 +1035,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     dump(tour_length, nvertices, NGraph::shortest_tour_length);
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 1250;
-    double start_temp = 20.0, end_temp = 0.0;
+    double start_time = timer.elapsed_ms(), now_time, end_time = 1500;
+    double start_temp = 50.0, end_temp = 0.0;
     int vertice_coeff = 10;
     while ((now_time = timer.elapsed_ms()) < end_time) {
         loop++;
@@ -1147,11 +1073,33 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     dump(tour.size());
 
     auto A = compute_initial_A(g);
+    {
+        const int end = 10000;
+        dump(A.size(), NInput::LA, compute_signal_cost(tour, A));
+        int nsegment = (NInput::LA - (int)A.size()) / NInput::LB;
+        dump(nsegment);
+        double interval_ms = (end - timer.elapsed_ms()) / nsegment;
+        dump(interval_ms);
+        double start = timer.elapsed_ms();
+        for (int i = 0; i < nsegment; i++) {
+            int best = INT_MAX, ibest = -1;
+            while (timer.elapsed_ms() < start + (i + 1) * interval_ms) {
+                auto NA(A);
+                int i = rnd.next_u32(tour.size() - NInput::LB);
+                NA.insert(NA.end(), tour.begin() + i, tour.begin() + i + NInput::LB);
+                int cost = compute_signal_cost(tour, NA);
+                if (chmin(best, cost)) {
+                    ibest = i;
+                }
+            }
+            assert(ibest != -1);
+            dump(i, best);
+            A.insert(A.end(), tour.begin() + ibest, tour.begin() + ibest + NInput::LB);
+        }
+    }
 
-    SegmentModifier smod(timer, rnd, tour, A);
-    smod.run(timelimit - timer.elapsed_ms());
-
-    A = smod.A;
+    //auto [score, A] = compute_A(tour, g);
+    dump(A.size());
 
     std::vector<std::string> ans;
     int score;

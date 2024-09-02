@@ -1109,7 +1109,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     dump(tour_length, nvertices, NGraph::shortest_tour_length);
 
     int loop = 0;
-    double start_time = timer.elapsed_ms(), now_time, end_time = 1250;
+    double start_time = timer.elapsed_ms(), now_time, end_time = 1500;
     double start_temp = 20.0, end_temp = 0.0;
     int vertice_coeff = 10;
     while ((now_time = timer.elapsed_ms()) < end_time) {
